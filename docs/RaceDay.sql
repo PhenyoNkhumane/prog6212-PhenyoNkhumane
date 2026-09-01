@@ -31,3 +31,16 @@ CREATE TABLE [User] (
         CHECK (role IN ('Organiser', 'Participant'))
 );
 GO
+-- =============================================
+-- TABLE: Club
+-- =============================================
+
+CREATE TABLE Club (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    name VARCHAR(200) NOT NULL UNIQUE,
+    registration_number VARCHAR(100) UNIQUE,
+    contact_email VARCHAR(255),
+    contact_number VARCHAR(30),
+    created_at DATETIME2 NOT NULL DEFAULT GETDATE()
+);
+GO
