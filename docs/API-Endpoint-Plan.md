@@ -54,7 +54,7 @@ Roles referenced below come from the role field on User, which is restricted to 
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| POST | `/api/events/{eventId}/results` | Capture a finish time/position for a participant's registration | Organiser (owner) | `{ registration_id, gun_time, net_time, overall_position, category_position, status }` | `201 Created` — result object |
+| POST | `/api/events/{eventId}/results` | Record the official race result for a participant's registration, including times, positions and race status | Organiser (owner) | `{ registration_id, gun_time, net_time, overall_position, category_position, status }` | `201 Created` — result object |
 | PUT | `/api/results/{resultId}` | Correct/update a captured result | Organiser (owner) | `{ gun_time?, net_time?, overall_position?, category_position?, status? }` | `200 OK` — updated result object |
 | GET | `/api/events/{eventId}/results` | View all results for an event | Public | — | `200 OK` — array of results |
 | GET | `/api/results/me` | View the logged-in Participant's own results | Participant | — | `200 OK` — array of results |
