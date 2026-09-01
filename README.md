@@ -68,3 +68,9 @@ The planned API follows REST principles and includes endpoints for:
 - Disciplines
 - Clubs
 - Club memberships
+
+## GitHub Actions CI/CD
+
+The project uses GitHub Actions to validate the required repository structure.
+
+![GitHub Actions Successful Build](docs/github-actions-success.png)
