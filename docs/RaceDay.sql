@@ -67,3 +67,35 @@ CREATE TABLE Event (
         CHECK (status IN ('Draft', 'Published', 'Cancelled'))
 );
 GO
+-- =============================================
+-- TABLE: Category
+-- =============================================
+
+CREATE TABLE Category (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    event_id INT NOT NULL,
+    discipline_id INT NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    distance_km DECIMAL(6,2),
+    entry_fee_zar DECIMAL(10,2) NOT NULL,
+    max_slots INT NOT NULL,
+    start_time TIME NOT NULL,
+
+    CONSTRAINT FK_Category_Event
+        FOREIGN KEY (event_id)
+        REFERENCES Event(id),
+
+    CONSTRAINT FK_Category_Discipline
+        FOREIGN KEY (discipline_id)
+        REFERENCES Discipline(id),
+
+    CONSTRAINT CK_Category_Distance
+        CHECK (distance_km > 0),
+
+    CONSTRAINT CK_Category_EntryFee
+        CHECK (entry_fee_zar >= 0),
+
+    CONSTRAINT CK_Category_MaxSlots
+        CHECK (max_slots > 0)
+);
+GO
