@@ -169,3 +169,33 @@ CREATE TABLE ClubMembership (
         UNIQUE (participant_id, discipline_id)
 );
 GO
+-- =============================================
+-- TABLE: Result
+-- =============================================
+
+CREATE TABLE Result (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    registration_id INT NOT NULL,
+    gun_time TIME,
+    net_time TIME,
+    overall_position INT,
+    category_position INT,
+    status VARCHAR(20) NOT NULL,
+
+    CONSTRAINT FK_Result_Registration
+        FOREIGN KEY (registration_id)
+        REFERENCES Registration(id),
+
+    CONSTRAINT CK_Result_Status
+        CHECK (status IN ('Finished', 'DNF', 'DNS', 'DQ')),
+
+    CONSTRAINT CK_Result_OverallPosition
+        CHECK (overall_position IS NULL OR overall_position > 0),
+
+    CONSTRAINT CK_Result_CategoryPosition
+        CHECK (category_position IS NULL OR category_position > 0),
+
+    CONSTRAINT UQ_Result_Registration
+        UNIQUE (registration_id)
+);
+GO
