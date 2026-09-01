@@ -99,3 +99,41 @@ CREATE TABLE Category (
         CHECK (max_slots > 0)
 );
 GO
+-- =============================================
+-- TABLE: Registration
+-- =============================================
+
+CREATE TABLE Registration (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    participant_id INT NOT NULL,
+    category_id INT NOT NULL,
+    registration_date DATETIME2 NOT NULL DEFAULT GETDATE(),
+    payment_status VARCHAR(20) NOT NULL,
+    amount_paid DECIMAL(10,2) NOT NULL,
+    assigned_bib_number VARCHAR(20),
+    requires_temp_asa_license BIT NOT NULL DEFAULT 0,
+    medical_aid_name VARCHAR(150),
+    medical_aid_number VARCHAR(50),
+    status VARCHAR(20) NOT NULL DEFAULT 'Active',
+
+    CONSTRAINT FK_Registration_Participant
+        FOREIGN KEY (participant_id)
+        REFERENCES [User](id),
+
+    CONSTRAINT FK_Registration_Category
+        FOREIGN KEY (category_id)
+        REFERENCES Category(id),
+
+    CONSTRAINT CK_Registration_PaymentStatus
+        CHECK (payment_status IN ('Pending', 'Paid', 'Refunded')),
+
+    CONSTRAINT CK_Registration_AmountPaid
+        CHECK (amount_paid >= 0),
+
+    CONSTRAINT CK_Registration_Status
+        CHECK (status IN ('Active', 'Cancelled')),
+
+    CONSTRAINT UQ_Registration_Participant_Category
+        UNIQUE (participant_id, category_id)
+);
+GO
