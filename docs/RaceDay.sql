@@ -199,3 +199,81 @@ CREATE TABLE Result (
         UNIQUE (registration_id)
 );
 GO
+-- =============================================
+-- SAMPLE DATA
+-- =============================================
+
+-- DISCIPLINES
+INSERT INTO Discipline (name, description)
+VALUES
+('Running', 'Road running and marathon events'),
+('Walking', 'Competitive and recreational walking events'),
+('Cycling', 'Road cycling events');
+GO
+
+
+-- USERS
+-- 2 Organisers
+INSERT INTO [User]
+    (email, password_hash, first_name, last_name, role,
+     id_number_or_passport, asa_permanent_license_number)
+VALUES
+('organiser1@raceday.co.za', 'HASH_ORGANISER_001',
+ 'Thabo', 'Mokoena', 'Organiser',
+ '8001015009087', NULL),
+
+('organiser2@raceday.co.za', 'HASH_ORGANISER_002',
+ 'Lerato', 'Molefe', 'Organiser',
+ '8205056007088', NULL);
+GO
+
+-- 2 Participants
+INSERT INTO [User]
+    (email, password_hash, first_name, last_name, role,
+     id_number_or_passport, asa_permanent_license_number)
+VALUES
+('participant1@raceday.co.za', 'HASH_PARTICIPANT_001',
+ 'Phenyo', 'Nkhumane', 'Participant',
+ '9001015009089', 'ASA123456'),
+
+('participant2@raceday.co.za', 'HASH_PARTICIPANT_002',
+ 'Naledi', 'Mokoena', 'Participant',
+ '9202026007090', 'ASA654321');
+GO
+
+
+-- CLUBS
+INSERT INTO Club
+    (name, registration_number, contact_email, contact_number)
+VALUES
+('Johannesburg Running Club', 'JRC001',
+ 'info@jrc.co.za', '0115551001'),
+
+('Gauteng Cycling Club', 'GCC001',
+ 'info@gcc.co.za', '0115551002');
+GO
+
+
+-- EVENTS
+INSERT INTO Event
+    (organiser_id, title, description, date,
+     venue_name, city, province, status)
+VALUES
+(1, 'Johannesburg Road Race',
+ 'Annual road running event.',
+ '2026-10-10',
+ 'Zoo Lake Sports Grounds', 'Johannesburg',
+ 'Gauteng', 'Published'),
+
+(1, 'Soweto Community Run',
+ 'Community-focused running event.',
+ '2026-11-15',
+ 'Orlando Stadium', 'Soweto',
+ 'Gauteng', 'Published'),
+
+(2, 'Gauteng Cycling Challenge',
+ 'Competitive road cycling event.',
+ '2026-12-05',
+ 'Midrand Sports Centre', 'Midrand',
+ 'Gauteng', 'Draft');
+GO
