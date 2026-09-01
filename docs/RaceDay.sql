@@ -44,3 +44,26 @@ CREATE TABLE Club (
     created_at DATETIME2 NOT NULL DEFAULT GETDATE()
 );
 GO
+-- =============================================
+-- TABLE: Event
+-- =============================================
+
+CREATE TABLE Event (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    organiser_id INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    description VARCHAR(1000),
+    date DATE NOT NULL,
+    venue_name VARCHAR(200) NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    province VARCHAR(100) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+
+    CONSTRAINT FK_Event_Organiser
+        FOREIGN KEY (organiser_id)
+        REFERENCES [User](id),
+
+    CONSTRAINT CK_Event_Status
+        CHECK (status IN ('Draft', 'Published', 'Cancelled'))
+);
+GO
