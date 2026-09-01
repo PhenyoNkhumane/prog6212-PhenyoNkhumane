@@ -35,7 +35,7 @@ Roles referenced below come from the role field on User, which is restricted to 
 |---|---|---|---|---|---|
 | GET | `/api/events/{eventId}/categories` | List all categories for a given event | Public | — | `200 OK` — array of categories |
 | GET | `/api/categories/{categoryId}` | Get details of a single category | Public | — | `200 OK` — category object |
-| POST | `/api/events/{eventId}/categories` | Create a new age/distance category for an event | Organiser (owner) | `{ discipline_id, name, distance_km, entry_fee_zar, max_slots, start_time }` | `201 Created` — category object |
+| POST | `/api/events/{eventId}/categories` | Create a new category for an event, specifying its discipline, distance, entry fee, capacity and start time | Organiser (owner) | `{ discipline_id, name, distance_km, entry_fee_zar, max_slots, start_time }` | `201 Created` — category object |
 | PUT | `/api/categories/{categoryId}` | Update a category | Organiser (owner) | `{ name?, distance_km?, entry_fee_zar?, max_slots?, start_time? }` | `200 OK` — updated category object |
 | DELETE | `/api/categories/{categoryId}` | Delete a category | Organiser (owner) | — | `204 No Content` |
 
@@ -47,8 +47,8 @@ Roles referenced below come from the role field on User, which is restricted to 
 | GET | `/api/registrations/me` | View the logged-in Participant's own enrolments | Participant | — | `200 OK` — array of registrations |
 | GET | `/api/events/{eventId}/registrations` | View all enrolments for an organiser's event | Organiser (owner) | — | `200 OK` — array of registrations |
 | GET | `/api/registrations/{registrationId}` | View a single registration's detail | Participant (owner) / Organiser (owner event) | — | `200 OK` — registration object |
-| PUT | `/api/registrations/{registrationId}` | Update a registration (e.g. payment status, assigned bib number) | Organiser (owner); Participant limited to own medical/contact fields | `{ payment_status?, amount_paid?, assigned_bib_number?, status?, medical_aid_name?, medical_aid_number? }` | `200 OK` — updated registration |
-| DELETE | `/api/registrations/{registrationId}` | Cancel/withdraw a registration | Participant (owner) / Organiser (owner event) | — | `204 No Content` |
+| PUT | `/api/registrations/{registrationId}` | Update a registration | Organiser (owner); Participant (owner) limited to their own medical-aid details | Organiser: `{ payment_status?, amount_paid?, assigned_bib_number?, status? }` / Participant: `{ medical_aid_name?, medical_aid_number? }` | `200 OK` — updated registration object |
+| DELETE | `/api/registrations/{registrationId}` | Cancel a registration or withdraw from an event | Participant (owner) / Organiser (owner event) | — | `204 No Content` |
 
 ## 6. Results
 
