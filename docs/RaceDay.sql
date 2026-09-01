@@ -137,3 +137,35 @@ CREATE TABLE Registration (
         UNIQUE (participant_id, category_id)
 );
 GO
+-- =============================================
+-- TABLE: ClubMembership
+-- =============================================
+
+CREATE TABLE ClubMembership (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    participant_id INT NOT NULL,
+    club_id INT NOT NULL,
+    discipline_id INT NOT NULL,
+    membership_number VARCHAR(100),
+    joined_at DATE NOT NULL DEFAULT GETDATE(),
+    status VARCHAR(20) NOT NULL DEFAULT 'Active',
+
+    CONSTRAINT FK_ClubMembership_Participant
+        FOREIGN KEY (participant_id)
+        REFERENCES [User](id),
+
+    CONSTRAINT FK_ClubMembership_Club
+        FOREIGN KEY (club_id)
+        REFERENCES Club(id),
+
+    CONSTRAINT FK_ClubMembership_Discipline
+        FOREIGN KEY (discipline_id)
+        REFERENCES Discipline(id),
+
+    CONSTRAINT CK_ClubMembership_Status
+        CHECK (status IN ('Active', 'Inactive')),
+
+    CONSTRAINT UQ_ClubMembership_Participant_Discipline
+        UNIQUE (participant_id, discipline_id)
+);
+GO
