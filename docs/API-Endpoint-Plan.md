@@ -3,7 +3,7 @@
 **Project:** Race/Event Management System
 **Part:** 1 — Endpoint Planning (based on approved ERD: User, Club, Event, Category, Discipline, Registration, Result, ClubMembership)
 
-Roles referenced below come from the `user_role` enum on `User`: **Participant** and **Organiser**. "Owner" means the Organiser who is the `organiser_id` on the related `Event`.
+Roles referenced below come from the role field on User, which is restricted to Participant and Organiser using a database CHECK constraint. Each account has exactly one role. "Owner" means the Organiser whose organiser_id is associated with the related Event.
 
 ## 1. Authentication
 
@@ -23,10 +23,10 @@ Roles referenced below come from the `user_role` enum on `User`: **Participant**
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| GET | `/api/events` | List all events (supports filters, e.g. `?status=`, `?city=`, `?date=`) | Public | — | `200 OK` — array of events |
+| GET | `/api/events` | List all events, with optional filters such as status, city or date | Public | — | `200 OK` — array of events |
 | GET | `/api/events/{eventId}` | Get details of a single event | Public | — | `200 OK` — event object |
-| POST | `/api/events` | Create a new event (name/title, description, date, location, distance, event type) | Organiser | `{ title, description, date, venue_name, city, province, status, event_type }` | `201 Created` — event object |
-| PUT | `/api/events/{eventId}` | Update an existing event | Organiser (owner) | `{ title?, description?, date?, venue_name?, city?, province?, status?, event_type? }` | `200 OK` — updated event object |
+| POST | `/api/events` | Create a new event | Organiser | `{ title, description, date, venue_name, city, province, status }` | `201 Created` — event object |
+| PUT | `/api/events/{eventId}` | Update an existing event | Organiser (owner) | `{ title?, description?, date?, venue_name?, city?, province?, status? }` | `200 OK` — updated event object |
 | DELETE | `/api/events/{eventId}` | Delete an event | Organiser (owner) | — | `204 No Content` |
 
 ## 4. Categories
