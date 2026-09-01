@@ -3,7 +3,7 @@
 **Project:** Race/Event Management System
 **Part:** 1 — Endpoint Planning (based on approved ERD: User, Club, Event, Category, Discipline, Registration, Result, ClubMembership)
 
-Roles referenced below come from the role field on User, which is restricted to Participant and Organiser using a database CHECK constraint. Each account has exactly one role. "Owner" means the Organiser whose organiser_id is associated with the related Event.
+Roles referenced below come from the role field on User, which permits exactly two values: Participant and Organiser. System-controlled operations do not represent an account role.
 
 ## 1. Authentication
 
@@ -64,15 +64,19 @@ Roles referenced below come from the role field on User, which is restricted to 
 
 These support entities referenced by the ERD (`Discipline`, `Club`, `ClubMembership`) that Categories and Registrations depend on, but weren't explicitly listed in the functional requirements.
 
+|## 7. Additional Supporting Endpoints
+
+These endpoints support the `Discipline`, `Club`, and `ClubMembership` entities in the ERD. Discipline and Club creation are treated as system-controlled operations rather than user roles, since RaceDay accounts have exactly one role: Participant or Organiser.
+
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| GET | `/api/disciplines` | List all disciplines (e.g. Run, Walk, Cycle) | Public | — | `200 OK` — array of disciplines |
-| POST | `/api/disciplines` | Create a new discipline | Organiser | `{ name, description }` | `201 Created` — discipline object |
-| GET | `/api/clubs` | List all clubs | Public | — | `200 OK` — array of clubs |
-| POST | `/api/clubs` | Register a new club | Organiser | `{ name, registration_number, contact_email, contact_number }` | `201 Created` — club object |
-| GET | `/api/clubs/{clubId}` | Get details of a single club | Public | — | `200 OK` — club object |
-| POST | `/api/clubs/{clubId}/memberships` | Join a club under a discipline | Participant | `{ discipline_id, membership_number, joined_at }` | `201 Created` — membership object |
-| GET | `/api/users/me/memberships` | View the logged-in Participant's own club memberships | Participant | — | `200 OK` — array of memberships |
+| GET | `/api/disciplines` | List all available sporting disciplines | Public | — | `200 OK` — array of disciplines |
+| POST | `/api/disciplines` | Create a new sporting discipline as a system-controlled operation | System | `{ name, description }` | `201 Created` — discipline object |
+| GET | `/api/clubs` | List all registered clubs | Public | — | `200 OK` — array of clubs |
+| POST | `/api/clubs` | Register a new club as a system-controlled operation | System | `{ name, registration_number, contact_email, contact_number }` | `201 Created` — club object |
+| GET | `/api/clubs/{clubId}` | Get details of a specific club | Public | — | `200 OK` — club object |
+| POST | `/api/clubs/{clubId}/memberships` | Join a club under a specific sporting discipline | Participant | `{ discipline_id, membership_number, joined_at }` | `201 Created` — membership object |
+| GET | `/api/users/me/memberships` | View the logged-in Participant's club memberships | Participant | — | `200 OK` — array of memberships |
 
 ## Notes on error responses
 
