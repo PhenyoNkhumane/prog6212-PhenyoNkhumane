@@ -1,0 +1,29 @@
+name: Validate RaceDay Repository
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check required folders and files
+        run: |
+          test -d docs
+          test -f docs/ERD.png
+          test -f docs/RaceDay.sql
+          test -f docs/API-Endpoint-Plan.md
+          test -f README.md
+
+      - name: Validate repository structure
+        run: |
+          echo "RaceDay repository structure validated successfully."
