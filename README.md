@@ -8,9 +8,11 @@ The system manages users, sporting disciplines, clubs, events, race categories, 
 
 ## Database Design
 
-The RaceDay database consists of eight main entities:
+The RaceDay database includes these entities:
 
 - User
+- Participant
+- Organiser
 - Event
 - Category
 - Discipline
@@ -28,7 +30,7 @@ RaceDay supports exactly two account roles:
 - Participant
 - Organiser
 
-A user has one role and cannot simultaneously be both a Participant and an Organiser.
+A User has exactly one account subtype: Participant or Organiser. The subtype tables have one-to-one relationships with User. Event records reference Organiser, while registrations and club memberships reference Participant, so the database rejects cross-role use. Public self-registration creates Participant accounts only. An authorised administrator provisions Organiser accounts, and the organiser must change the temporary password on first login.
 
 ## Main Relationships
 
@@ -46,7 +48,8 @@ A user has one role and cannot simultaneously be both a Participant and an Organ
 
 The `docs` folder contains:
 
-- `ERD.png` — Entity Relationship Diagram
+- `ERD.md` — current entity relationship diagram source
+- `ERD.png` — existing diagram image (legacy; see `ERD.md` for the updated account subtype design)
 - `RaceDay.sql` — SQL database creation script
 - `API-Endpoint-Plan.md` — planned REST API endpoints
 

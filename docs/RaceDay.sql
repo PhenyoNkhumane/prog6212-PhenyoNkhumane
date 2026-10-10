@@ -26,12 +26,48 @@ CREATE TABLE [User] (
   ROLE VARCHAR(20) NOT NULL,
   id_number_or_passport VARCHAR(50),
   asa_permanent_license_number VARCHAR(50),
+  must_change_password BIT NOT NULL DEFAULT 0,
   created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
   CONSTRAINT CK_User_Role CHECK (
     ROLE IN ('Organiser', 'Participant')
   )
 );
 
+GO
+-- =============================================
+-- TABLES: Participant and Organiser account types
+-- =============================================
+CREATE TABLE Participant (
+  user_id INT PRIMARY KEY,
+  CONSTRAINT FK_Participant_User FOREIGN KEY (user_id) REFERENCES [User] (id)
+);
+GO
+CREATE TABLE Organiser (
+  user_id INT PRIMARY KEY,
+  provisioned_by VARCHAR(255) NOT NULL,
+  provisioned_at DATETIME2 NOT NULL DEFAULT GETDATE(),
+  CONSTRAINT FK_Organiser_User FOREIGN KEY (user_id) REFERENCES [User] (id)
+);
+GO
+-- A user may belong to only one account type. Role checks also prevent a
+-- subtype row being created for a user with the other role.
+CREATE TRIGGER TR_Participant_EnforceRole ON Participant
+AFTER INSERT AS
+BEGIN
+  IF EXISTS (SELECT 1 FROM inserted i JOIN [User] u ON u.id=i.user_id WHERE u.ROLE <> 'Participant')
+    THROW 51001, 'Participant subtype requires Participant role.', 1;
+  IF EXISTS (SELECT 1 FROM inserted i JOIN Organiser o ON o.user_id=i.user_id)
+    THROW 51002, 'A user cannot be both Participant and Organiser.', 1;
+END;
+GO
+CREATE TRIGGER TR_Organiser_EnforceRole ON Organiser
+AFTER INSERT AS
+BEGIN
+  IF EXISTS (SELECT 1 FROM inserted i JOIN [User] u ON u.id=i.user_id WHERE u.ROLE <> 'Organiser')
+    THROW 51003, 'Organiser subtype requires Organiser role.', 1;
+  IF EXISTS (SELECT 1 FROM inserted i JOIN Participant p ON p.user_id=i.user_id)
+    THROW 51004, 'A user cannot be both Participant and Organiser.', 1;
+END;
 GO
 -- =============================================
 -- TABLE: Club
@@ -59,7 +95,7 @@ CREATE TABLE Event (
   city VARCHAR(100) NOT NULL,
   province VARCHAR(100) NOT NULL,
   status VARCHAR(20) NOT NULL,
-  CONSTRAINT FK_Event_Organiser FOREIGN KEY (organiser_id) REFERENCES [User] (id),
+  CONSTRAINT FK_Event_Organiser FOREIGN KEY (organiser_id) REFERENCES Organiser (user_id),
   CONSTRAINT CK_Event_Status CHECK (status IN ('Draft', 'Published', 'Cancelled'))
 );
 
@@ -99,7 +135,7 @@ CREATE TABLE Registration (
   medical_aid_name VARCHAR(150),
   medical_aid_number VARCHAR(50),
   status VARCHAR(20) NOT NULL DEFAULT 'Active',
-  CONSTRAINT FK_Registration_Participant FOREIGN KEY (participant_id) REFERENCES [User] (id),
+  CONSTRAINT FK_Registration_Participant FOREIGN KEY (participant_id) REFERENCES Participant (user_id),
   CONSTRAINT FK_Registration_Category FOREIGN KEY (category_id) REFERENCES Category (id),
   CONSTRAINT CK_Registration_PaymentStatus CHECK (payment_status IN ('Pending', 'Paid', 'Refunded')),
   CONSTRAINT CK_Registration_AmountPaid CHECK (amount_paid >= 0),
@@ -119,7 +155,7 @@ CREATE TABLE ClubMembership (
   membership_number VARCHAR(100),
   joined_at DATE NOT NULL DEFAULT GETDATE(),
   status VARCHAR(20) NOT NULL DEFAULT 'Active',
-  CONSTRAINT FK_ClubMembership_Participant FOREIGN KEY (participant_id) REFERENCES [User] (id),
+  CONSTRAINT FK_ClubMembership_Participant FOREIGN KEY (participant_id) REFERENCES Participant (user_id),
   CONSTRAINT FK_ClubMembership_Club FOREIGN KEY (club_id) REFERENCES Club (id),
   CONSTRAINT FK_ClubMembership_Discipline FOREIGN KEY (discipline_id) REFERENCES Discipline (id),
   CONSTRAINT CK_ClubMembership_Status CHECK (status IN ('Active', 'Inactive')),
@@ -182,6 +218,8 @@ VALUES
 ('organiser2@raceday.co.za', 'HASH_ORGANISER_002',
  'Lerato', 'Molefe', 'Organiser',
  '8205056007088', NULL);
+INSERT INTO Organiser (user_id, provisioned_by)
+VALUES (1, 'RaceDay administrator'), (2, 'RaceDay administrator');
 
 -- 2 Participants
 INSERT INTO [User]
@@ -195,6 +233,7 @@ VALUES
 ('participant2@raceday.co.za', 'HASH_PARTICIPANT_002',
  'Naledi', 'Mokoena', 'Participant',
  '9202026007090', 'ASA654321');
+INSERT INTO Participant (user_id) VALUES (3), (4);
 GO
 
 -- CLUBS

@@ -1,16 +1,18 @@
 # API Endpoint Plan
 
 **Project:** Race/Event Management System
-**Part:** 1 — Endpoint Planning (based on approved ERD: User, Club, Event, Category, Discipline, Registration, Result, ClubMembership)
+**Part:** 1 — Endpoint Planning (based on ERD: User, Participant, Organiser, Club, Event, Category, Discipline, Registration, Result, ClubMembership)
 
-Roles referenced below come from the role field on User, which permits exactly two values: Participant and Organiser. System-controlled operations do not represent an account role.
+Each account has exactly one subtype: Participant or Organiser. Public self-registration creates Participant accounts only. Organiser accounts are created by an authorised administrator, who issues a temporary password; the organiser must change it at first login. System-controlled operations do not represent an account role.
 
 ## 1. Authentication
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| POST | `/api/auth/register` | Register a new user as either a Participant or an Organiser | Public | `{ email, password, first_name, last_name, role, id_number_or_passport, asa_permanent_license_number? }` | `201 Created` — `{ user: {...}, token }` |
+| POST | `/api/auth/register` | Register a Participant account; role is fixed to Participant and cannot be supplied or changed by the caller | Public | `{ email, password, first_name, last_name, id_number_or_passport, asa_permanent_license_number? }` | `201 Created` — `{ user: {...}, token }` |
+| POST | `/api/admin/organisers` | Provision an Organiser account; generate or set a one-time temporary password and require password change at first login | Authorised administrator | `{ email, first_name, last_name, id_number_or_passport }` | `201 Created` — organiser invitation or temporary credential delivered through the approved secure channel |
 | POST | `/api/auth/login` | Authenticate an existing user and issue a JWT | Public | `{ email, password }` | `200 OK` — `{ user: {...}, token }` |
+| PUT | `/api/auth/password` | Set a new password, including the required first-login change for a provisioned Organiser | Authenticated user | `{ current_password, new_password }` | `204 No Content` |
 
 ## 2. User Profile
 
