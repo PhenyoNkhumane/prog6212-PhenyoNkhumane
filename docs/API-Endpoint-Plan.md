@@ -3,7 +3,7 @@
 **Project:** Race/Event Management System
 **Part:** 1 — Endpoint Planning (based on ERD: User, Participant, Organiser, Club, Event, Category, Discipline, Registration, Result, ClubMembership)
 
-Each account has exactly one subtype: Participant or Organiser. Public self-registration creates Participant accounts only. Organiser accounts are created by an authorised administrator, who issues a temporary password; the organiser must change it at first login. System-controlled operations do not represent an account role.
+Each account has exactly one subtype: Participant or Organiser. Public self-registration creates Participant accounts only. Organiser accounts are created by an authorised administrator, who issues a temporary password; the organiser must change it at first login. Only the two account roles in this plan call protected endpoints.
 
 ## 1. Authentication
 
@@ -27,8 +27,8 @@ Each account has exactly one subtype: Participant or Organiser. Public self-regi
 |---|---|---|---|---|---|
 | GET | `/api/events` | List all events, with optional filters such as status, city or date | Public | — | `200 OK` — array of events |
 | GET | `/api/events/{eventId}` | Get details of a single event | Public | — | `200 OK` — event object |
-| POST | `/api/events` | Create a new event | Organiser | `{ title, description, date, venue_name, city, province, status }` | `201 Created` — event object |
-| PUT | `/api/events/{eventId}` | Update an existing event | Organiser (owner) | `{ title?, description?, date?, venue_name?, city?, province?, status? }` | `200 OK` — updated event object |
+| POST | `/api/events` | Create a new event | Organiser | `{ title, description, date, venue_name, city, province, distance_km, event_type, status }` | `201 Created` — event object; `400 Bad Request` for invalid type or distance |
+| PUT | `/api/events/{eventId}` | Update an existing event | Organiser (owner) | `{ title?, description?, date?, venue_name?, city?, province?, distance_km?, event_type?, status? }` | `200 OK` — updated event object; `404 Not Found` if absent |
 | DELETE | `/api/events/{eventId}` | Delete an event | Organiser (owner) | — | `204 No Content` |
 
 ## 4. Categories
@@ -37,20 +37,20 @@ Each account has exactly one subtype: Participant or Organiser. Public self-regi
 |---|---|---|---|---|---|
 | GET | `/api/events/{eventId}/categories` | List all categories for a given event | Public | — | `200 OK` — array of categories |
 | GET | `/api/categories/{categoryId}` | Get details of a single category | Public | — | `200 OK` — category object |
-| POST | `/api/events/{eventId}/categories` | Create a new category for an event, specifying its discipline, distance, entry fee, capacity and start time | Organiser (owner) | `{ discipline_id, name, distance_km, entry_fee_zar, max_slots, start_time }` | `201 Created` — category object |
-| PUT | `/api/categories/{categoryId}` | Update a category | Organiser (owner) | `{ name?, distance_km?, entry_fee_zar?, max_slots?, start_time? }` | `200 OK` — updated category object |
+| POST | `/api/events/{eventId}/categories` | Create a category by age range or distance, with discipline, entry fee, capacity and start time | Organiser (owner) | `{ discipline_id, name, category_type, distance_km?, min_age?, max_age?, entry_fee_zar, max_slots, start_time }` | `201 Created` — category object; `400 Bad Request` for invalid bounds; `404 Not Found` if event absent |
+| PUT | `/api/categories/{categoryId}` | Update a category | Organiser (owner) | `{ name?, category_type?, distance_km?, min_age?, max_age?, entry_fee_zar?, max_slots?, start_time? }` | `200 OK` — updated category object; `404 Not Found` if absent |
 | DELETE | `/api/categories/{categoryId}` | Delete a category | Organiser (owner) | — | `204 No Content` |
 
 ## 5. Event Enrolments (Registrations)
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| POST | `/api/events/{eventId}/registrations` | Enter (enrol in) an event by selecting a category | Participant | `{ category_id, requires_temp_asa_license?, medical_aid_name?, medical_aid_number? }` | `201 Created` — registration object |
+| POST | `/api/events/{eventId}/registrations` | Enter (enrol in) an event by selecting a category | Participant | `{ category_id, requires_temp_asa_license?, medical_aid_name?, medical_aid_number? }` | `201 Created` — registration object; `409 Conflict` for duplicate entry or full category; `404 Not Found` if event/category absent |
 | GET | `/api/registrations/me` | View the logged-in Participant's own enrolments | Participant | — | `200 OK` — array of registrations |
 | GET | `/api/events/{eventId}/registrations` | View all enrolments for an organiser's event | Organiser (owner) | — | `200 OK` — array of registrations |
 | GET | `/api/registrations/{registrationId}` | View a single registration's detail | Participant (owner) / Organiser (owner event) | — | `200 OK` — registration object |
 | PUT | `/api/registrations/{registrationId}` | Update a registration | Organiser (owner); Participant (owner) limited to their own medical-aid details | Organiser: `{ payment_status?, amount_paid?, assigned_bib_number?, status? }` / Participant: `{ medical_aid_name?, medical_aid_number? }` | `200 OK` — updated registration object |
-| DELETE | `/api/registrations/{registrationId}` | Cancel a registration or withdraw from an event | Participant (owner) / Organiser (owner event) | — | `204 No Content` |
+| DELETE | `/api/registrations/{registrationId}` | Cancel a registration or withdraw from an event | Participant (owner) / Organiser (owner event) | — | `204 No Content`; `404 Not Found` if absent |
 
 ## 6. Results
 
@@ -62,24 +62,20 @@ Each account has exactly one subtype: Participant or Organiser. Public self-regi
 | GET | `/api/results/me` | View the logged-in Participant's own results | Participant | — | `200 OK` — array of results |
 | GET | `/api/results/{resultId}` | View a single result | Participant (owner) / Organiser (owner event) | — | `200 OK` — result object |
 
-## 7. Additional supporting endpoints (identified as necessary from the ERD)
+## 7. Additional Supporting Endpoints
 
-These support entities referenced by the ERD (`Discipline`, `Club`, `ClubMembership`) that Categories and Registrations depend on, but weren't explicitly listed in the functional requirements.
-
-|## 7. Additional Supporting Endpoints
-
-These endpoints support the `Discipline`, `Club`, and `ClubMembership` entities in the ERD. Discipline and Club creation are treated as system-controlled operations rather than user roles, since RaceDay accounts have exactly one role: Participant or Organiser.
+These endpoints support the `Discipline`, `Club`, and `ClubMembership` entities in the ERD. Organisers create disciplines and register clubs; these are Organiser permissions and do not introduce a third account role.
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
 | GET | `/api/disciplines` | List all available sporting disciplines | Public | — | `200 OK` — array of disciplines |
-| POST | `/api/disciplines` | Create a new sporting discipline as a system-controlled operation | System | `{ name, description }` | `201 Created` — discipline object |
+| POST | `/api/disciplines` | Add a sporting discipline | Organiser | `{ name, description }` | `201 Created` — discipline object; `409 Conflict` if name already exists |
 | GET | `/api/clubs` | List all registered clubs | Public | — | `200 OK` — array of clubs |
-| POST | `/api/clubs` | Register a new club as a system-controlled operation | System | `{ name, registration_number, contact_email, contact_number }` | `201 Created` — club object |
+| POST | `/api/clubs` | Register a new club | Organiser | `{ name, registration_number, contact_email, contact_number }` | `201 Created` — club object; `409 Conflict` if name or registration number already exists |
 | GET | `/api/clubs/{clubId}` | Get details of a specific club | Public | — | `200 OK` — club object |
-| POST | `/api/clubs/{clubId}/memberships` | Join a club under a specific sporting discipline | Participant | `{ discipline_id, membership_number, joined_at }` | `201 Created` — membership object |
+| POST | `/api/clubs/{clubId}/memberships` | Join a club under a specific sporting discipline | Participant | `{ discipline_id, membership_number, joined_at }` | `201 Created` — membership object; `409 Conflict` if already a member for that discipline; `404 Not Found` if club absent |
 | GET | `/api/users/me/memberships` | View the logged-in Participant's club memberships | Participant | — | `200 OK` — array of memberships |
 
 ## Notes on error responses
 
-All endpoints additionally return, where applicable: `400 Bad Request` (validation failure), `401 Unauthorized` (missing/invalid token), `403 Forbidden` (wrong role or not the resource owner), and `404 Not Found` (resource does not exist).
+All endpoints additionally return, where applicable: `400 Bad Request` (validation failure), `401 Unauthorized` (missing/invalid token), `403 Forbidden` (wrong role or not the resource owner), and `404 Not Found` (resource does not exist). `409 Conflict` is used for uniqueness or capacity conflicts, including duplicate registrations and full categories. Because registrations are retained and uniquely constrained after cancellation, a participant cannot re-enrol in the same category after cancelling; a new category/entry or an explicit policy change is needed.
