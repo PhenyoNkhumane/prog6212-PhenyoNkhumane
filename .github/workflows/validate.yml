@@ -8,10 +8,12 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,7 +25,11 @@ jobs:
           test -f docs/RaceDay.sql
           test -f docs/API-Endpoint-Plan.md
           test -f README.md
-
-      - name: Validate repository structure
-        run: |
-          echo "RaceDay repository structure validated successfully."
+          test -f RaceDay.slnx
+          test -d RaceDay.Api
+          test -d RaceDay.Api.Tests
+          test -d RaceDay.Api/Controllers
+          test -d RaceDay.Api/Models
+          test -d RaceDay.Api/Dtos
+          test -d RaceDay.Api/Services
+          test -d RaceDay.Api/Data
