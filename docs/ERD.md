@@ -23,7 +23,10 @@ erDiagram
         string first_name
         string last_name
         string role
+        string id_number_or_passport
+        string asa_permanent_license_number
         boolean must_change_password
+        datetime created_at
     }
     PARTICIPANT {
         int user_id PK,FK
@@ -33,30 +36,66 @@ erDiagram
         string provisioned_by
         datetime provisioned_at
     }
+    CLUB {
+        int id PK
+        string name UK
+        string registration_number UK
+        string contact_email
+        string contact_number
+        datetime created_at
+    }
     EVENT {
         int id PK
         int organiser_id FK
         string title
+        string description
         date date
+        decimal distance_km
+        string event_type
+        string venue_name
+        string city
+        string province
+        string status
     }
     CATEGORY {
         int id PK
         int event_id FK
         int discipline_id FK
         string name
+        string category_type
+        decimal distance_km
+        int min_age
+        int max_age
+        decimal entry_fee_zar
+        int max_slots
+        time start_time
     }
     DISCIPLINE {
         int id PK
         string name UK
+        string description
     }
     REGISTRATION {
         int id PK
         int participant_id FK
         int category_id FK
+        datetime registration_date
+        string payment_status
+        decimal amount_paid
+        string assigned_bib_number
+        boolean requires_temp_asa_license
+        string medical_aid_name
+        string medical_aid_number
+        string status
     }
     RESULT {
         int id PK
         int registration_id FK,UK
+        time gun_time
+        time net_time
+        int overall_position
+        int category_position
+        string status
     }
     CLUB {
         int id PK
@@ -67,6 +106,9 @@ erDiagram
         int participant_id FK
         int club_id FK
         int discipline_id FK
+        string membership_number
+        date joined_at
+        string status
     }
 ```
 
