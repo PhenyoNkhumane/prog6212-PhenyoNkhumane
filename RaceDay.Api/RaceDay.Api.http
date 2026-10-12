@@ -1,0 +1,26 @@
+@RaceDay.Api_HostAddress = http://localhost:5286
+
+POST {{RaceDay.Api_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "runner@raceday.co.za",
+  "password": "Secret123!",
+  "firstName": "Phenyo",
+  "lastName": "Nkhumane",
+  "idNumberOrPassport": "9001015009089"
+}
+
+###
+
+POST {{RaceDay.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "runner@raceday.co.za",
+  "password": "Secret123!"
+}
+
+###
+
+GET {{RaceDay.Api_HostAddress}}/api/events
