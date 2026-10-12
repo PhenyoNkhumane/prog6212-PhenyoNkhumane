@@ -91,11 +91,15 @@ CREATE TABLE Event (
   title VARCHAR(200) NOT NULL,
   description VARCHAR(1000),
   DATE DATE NOT NULL,
+  distance_km DECIMAL(6, 2) NOT NULL,
+  event_type VARCHAR(10) NOT NULL,
   venue_name VARCHAR(200) NOT NULL,
   city VARCHAR(100) NOT NULL,
   province VARCHAR(100) NOT NULL,
   status VARCHAR(20) NOT NULL,
   CONSTRAINT FK_Event_Organiser FOREIGN KEY (organiser_id) REFERENCES Organiser (user_id),
+  CONSTRAINT CK_Event_Distance CHECK (distance_km > 0),
+  CONSTRAINT CK_Event_Type CHECK (event_type IN ('Run', 'Walk', 'Cycle')),
   CONSTRAINT CK_Event_Status CHECK (status IN ('Draft', 'Published', 'Cancelled'))
 );
 
@@ -108,13 +112,20 @@ CREATE TABLE Category (
   event_id INT NOT NULL,
   discipline_id INT NOT NULL,
   name VARCHAR(150) NOT NULL,
+  category_type VARCHAR(10) NOT NULL,
   distance_km DECIMAL(6, 2),
+  min_age INT,
+  max_age INT,
   entry_fee_zar DECIMAL(10, 2) NOT NULL,
   max_slots INT NOT NULL,
   start_time TIME NOT NULL,
   CONSTRAINT FK_Category_Event FOREIGN KEY (event_id) REFERENCES Event (id),
   CONSTRAINT FK_Category_Discipline FOREIGN KEY (discipline_id) REFERENCES Discipline (id),
   CONSTRAINT CK_Category_Distance CHECK (distance_km > 0),
+  CONSTRAINT CK_Category_Type CHECK (
+    (category_type = 'Distance' AND distance_km IS NOT NULL AND min_age IS NULL AND max_age IS NULL)
+    OR (category_type = 'Age' AND distance_km IS NULL AND min_age IS NOT NULL AND max_age IS NOT NULL AND min_age >= 0 AND max_age >= min_age)
+  ),
   CONSTRAINT CK_Category_EntryFee CHECK (entry_fee_zar >= 0),
   CONSTRAINT CK_Category_MaxSlots CHECK (max_slots > 0)
 );
@@ -249,13 +260,14 @@ GO
 
 -- EVENTS
 INSERT INTO Event
-    (organiser_id, title, description, date,
+    (organiser_id, title, description, date, distance_km, event_type,
      venue_name, city, province, status)
 VALUES
 (1,
  'Johannesburg Road Race',
  'Annual road running event.',
  '2026-10-10',
+ 21.00, 'Run',
  'Zoo Lake Sports Grounds',
  'Johannesburg',
  'Gauteng',
@@ -265,6 +277,7 @@ VALUES
  'Soweto Community Run',
  'Community-focused running event.',
  '2026-11-15',
+ 10.00, 'Run',
  'Orlando Stadium',
  'Soweto',
  'Gauteng',
@@ -274,6 +287,7 @@ VALUES
  'Gauteng Cycling Challenge',
  'Competitive road cycling event.',
  '2026-12-05',
+ 40.00, 'Cycle',
  'Midrand Sports Centre',
  'Midrand',
  'Gauteng',
@@ -282,18 +296,20 @@ GO
 
 -- CATEGORIES
 INSERT INTO Category
-    (event_id, discipline_id, name, distance_km,
+    (event_id, discipline_id, name, category_type, distance_km, min_age, max_age,
      entry_fee_zar, max_slots, start_time)
 VALUES
-(1, 1, '10km Road Race', 10.00, 150.00, 1000, '07:00'),
-(1, 1, '21km Half Marathon', 21.00, 250.00, 800, '06:30'),
-(1, 1, '42km Marathon', 42.00, 400.00, 500, '06:00'),
+(1, 1, 'Under 20', 'Age', NULL, 0, 19, 120.00, 200, '07:00'),
+(1, 1, 'Senior', 'Age', NULL, 60, 120, 120.00, 200, '07:00'),
+(1, 1, '10km Road Race', 'Distance', 10.00, NULL, NULL, 150.00, 1000, '07:00'),
+(1, 1, '21km Half Marathon', 'Distance', 21.00, NULL, NULL, 250.00, 800, '06:30'),
+(1, 1, '42km Marathon', 'Distance', 42.00, NULL, NULL, 400.00, 500, '06:00'),
 
-(2, 1, '5km Fun Run', 5.00, 80.00, 1500, '08:00'),
-(2, 2, '10km Walk', 10.00, 120.00, 500, '07:30'),
+(2, 1, '5km Fun Run', 'Distance', 5.00, NULL, NULL, 80.00, 1500, '08:00'),
+(2, 2, '10km Walk', 'Distance', 10.00, NULL, NULL, 120.00, 500, '07:30'),
 
-(3, 3, '50km Cycling Race', 50.00, 300.00, 500, '06:30'),
-(3, 3, '100km Cycling Race', 100.00, 500.00, 300, '06:00');
+(3, 3, '50km Cycling Race', 'Distance', 50.00, NULL, NULL, 300.00, 500, '06:30'),
+(3, 3, '100km Cycling Race', 'Distance', 100.00, NULL, NULL, 500.00, 300, '06:00');
 GO
 
 -- CLUB MEMBERSHIPS
