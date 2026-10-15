@@ -69,20 +69,28 @@ The `docs` folder contains:
 
 ## API
 
-The planned API follows REST principles and includes endpoints for:
+The ASP.NET Core API is in `RaceDay.Api` and follows REST principles. Sign-in uses **session cookies** (not JWT): `POST /api/auth/login` stores the user id and role in session. Protected actions use a custom `RequireRole` filter because `[Authorize(Roles=...)]` expects claims.
 
-- Authentication
-- User profiles
-- Events
-- Categories
-- Registrations
-- Results
-- Disciplines
-- Clubs
-- Club memberships
+Public self-registration creates Participant accounts only. Organiser accounts are provisioned with `POST /api/admin/organisers` and the `X-Admin-Key` header (see `AdminProvisioningKey` in `appsettings.json`). The temporary password is returned once and must be changed at first login.
+
+Run the database script in `docs/RaceDay.sql`, then:
+
+```bash
+dotnet run --project RaceDay.Api
+```
+
+Swagger is available in Development at `/swagger`.
+
+## Tests
+
+Unit tests live in the separate `RaceDay.Api.Tests` xUnit project. They use EF Core InMemory (`TestDbFactory`) and construct the real controllers. Session tests attach a `DefaultHttpContext` with a simple `ISession` implementation.
+
+```bash
+dotnet test
+```
 
 ## GitHub Actions CI/CD
 
-The project uses GitHub Actions to validate the required repository structure.
+`.github/workflows/dotnet.yml` restores, builds, and runs the tests on .NET 10. A green tick only counts if that test step ran. `.github/workflows/validate.yml` still checks the required repository files.
 
 ![GitHub Actions Successful Build](docs/github-actions-success.png)
