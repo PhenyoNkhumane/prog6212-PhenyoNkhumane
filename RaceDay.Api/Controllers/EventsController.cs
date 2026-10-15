@@ -23,31 +23,40 @@ public class EventsController : ControllerBase
     [HttpGet]
     public IActionResult GetEvents()
     {
-        return Ok(_db.Events.ToList());
+        return Ok(_db.Events
+            .Where(ev => ev.Status == "Published")
+            .Select(ev => new EventResponseDto
+            {
+                Id = ev.Id,
+                OrganiserId = ev.OrganiserId,
+                Title = ev.Title,
+                Description = ev.Description,
+                Date = ev.Date,
+                DistanceKm = ev.DistanceKm,
+                EventType = ev.EventType,
+                VenueName = ev.VenueName,
+                City = ev.City,
+                Province = ev.Province,
+                Status = ev.Status
+            }).ToList());
     }
 
     [HttpGet("{eventId:int}")]
     public IActionResult GetEvent(int eventId)
     {
-        var ev = _db.Events.Find(eventId);
+        var ev = _db.Events.FirstOrDefault(ev => ev.Id == eventId && ev.Status == "Published");
         if (ev is null)
         {
             return NotFound();
         }
 
-        return Ok(ev);
+        return Ok(ResponseMapper.ToResponse(ev));
     }
 
     [HttpPost]
     [RequireRole(Roles.Organiser)]
     public IActionResult CreateEvent(CreateEventDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         if (dto.DistanceKm <= 0)
         {
             return BadRequest("Distance must be greater than zero.");
@@ -61,6 +70,11 @@ public class EventsController : ControllerBase
         if (!EventStatuses.Contains(dto.Status))
         {
             return BadRequest("Invalid event status.");
+        }
+
+        if (dto.Date < DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return BadRequest("Event date cannot be in the past.");
         }
 
         var organiserId = SessionAuth.GetUserId(HttpContext)!.Value;
@@ -84,19 +98,13 @@ public class EventsController : ControllerBase
         };
         _db.Events.Add(ev);
         _db.SaveChanges();
-        return Created($"/api/events/{ev.Id}", ev);
+        return Created($"/api/events/{ev.Id}", ResponseMapper.ToResponse(ev));
     }
 
     [HttpPut("{eventId:int}")]
     [RequireRole(Roles.Organiser)]
     public IActionResult UpdateEvent(int eventId, UpdateEventDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var ev = _db.Events.Find(eventId);
         if (ev is null)
         {
@@ -123,6 +131,11 @@ public class EventsController : ControllerBase
             return BadRequest("Invalid event status.");
         }
 
+        if (dto.Date is not null && dto.Date < DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return BadRequest("Event date cannot be in the past.");
+        }
+
         ev.Title = dto.Title ?? ev.Title;
         ev.Description = dto.Description ?? ev.Description;
         ev.Date = dto.Date ?? ev.Date;
@@ -133,19 +146,13 @@ public class EventsController : ControllerBase
         ev.EventType = dto.EventType ?? ev.EventType;
         ev.Status = dto.Status ?? ev.Status;
         _db.SaveChanges();
-        return Ok(ev);
+        return Ok(ResponseMapper.ToResponse(ev));
     }
 
     [HttpDelete("{eventId:int}")]
     [RequireRole(Roles.Organiser)]
     public IActionResult DeleteEvent(int eventId)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var ev = _db.Events.Find(eventId);
         if (ev is null)
         {
