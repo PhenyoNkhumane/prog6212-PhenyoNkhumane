@@ -7,6 +7,7 @@ public class RegisterDto
     public required string FirstName { get; set; }
     public required string LastName { get; set; }
     public required string IdNumberOrPassport { get; set; }
+    public required string Role { get; set; }
     public string? AsaPermanentLicenseNumber { get; set; }
 }
 
@@ -35,6 +36,12 @@ public class UserResponseDto
     public DateTime CreatedAt { get; set; }
 }
 
+public class AuthResponseDto
+{
+    public required UserResponseDto User { get; set; }
+    public required string Token { get; set; }
+}
+
 public class UpdateProfileDto
 {
     public string? FirstName { get; set; }
@@ -42,12 +49,4 @@ public class UpdateProfileDto
     public string? Email { get; set; }
     public string? IdNumberOrPassport { get; set; }
     public string? AsaPermanentLicenseNumber { get; set; }
-}
-
-public class CreateOrganiserDto
-{
-    public required string Email { get; set; }
-    public required string FirstName { get; set; }
-    public required string LastName { get; set; }
-    public required string IdNumberOrPassport { get; set; }
 }
