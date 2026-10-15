@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using RaceDay.Api.Data;
 using RaceDay.Api.Dtos;
 using RaceDay.Api.Models;
@@ -12,25 +13,31 @@ namespace RaceDay.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
+    private readonly JwtTokenService _tokenService;
     private readonly PasswordHasher<User> _passwordHasher = new();
 
-    public AuthController(ApplicationDbContext db)
+    public AuthController(ApplicationDbContext db, JwtTokenService tokenService)
     {
         _db = db;
+        _tokenService = tokenService;
     }
 
     [HttpPost("register")]
-    public IActionResult Register(RegisterDto dto)
+    public async Task<IActionResult> Register(RegisterDto dto)
     {
-        if (_db.Users.Any(u => u.Email == dto.Email))
-        {
-            return BadRequest("Email is already registered.");
-        }
-
-        const string role = Roles.Participant;
-        if (!Roles.Allowed.Contains(role))
+        if (!Roles.Allowed.Contains(dto.Role))
         {
             return BadRequest("Invalid role.");
+        }
+
+        if (!IsStrongPassword(dto.Password))
+        {
+            return BadRequest("Password must be at least 12 characters and include upper-case, lower-case, numeric, and non-alphanumeric characters.");
+        }
+
+        if (await _db.Users.AnyAsync(u => u.Email == dto.Email))
+        {
+            return BadRequest("Email is already registered.");
         }
 
         var user = new User
@@ -39,7 +46,7 @@ public class AuthController : ControllerBase
             PasswordHash = string.Empty,
             FirstName = dto.FirstName,
             LastName = dto.LastName,
-            Role = role,
+            Role = dto.Role,
             IdNumberOrPassport = dto.IdNumberOrPassport,
             AsaPermanentLicenseNumber = dto.AsaPermanentLicenseNumber,
             MustChangePassword = false,
@@ -47,18 +54,36 @@ public class AuthController : ControllerBase
         };
         user.PasswordHash = _passwordHasher.HashPassword(user, dto.Password);
 
+        await using var transaction = await _db.Database.BeginTransactionAsync();
         _db.Users.Add(user);
-        _db.SaveChanges();
-        _db.Participants.Add(new Participant { UserId = user.Id });
-        _db.SaveChanges();
+        await _db.SaveChangesAsync();
+        if (user.Role == Roles.Participant)
+        {
+            _db.Participants.Add(new Participant { UserId = user.Id });
+        }
+        else
+        {
+            _db.Organisers.Add(new Organiser
+            {
+                UserId = user.Id,
+                ProvisionedBy = "Self-registration",
+                ProvisionedAt = DateTime.UtcNow
+            });
+        }
+        await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
-        return Created($"/api/users/me", UserMapper.ToResponse(user));
+        return Created("/api/users/me", new AuthResponseDto
+        {
+            User = UserMapper.ToResponse(user),
+            Token = _tokenService.CreateToken(user)
+        });
     }
 
     [HttpPost("login")]
-    public IActionResult Login(LoginDto dto)
+    public async Task<IActionResult> Login(LoginDto dto)
     {
-        var user = _db.Users.FirstOrDefault(u => u.Email == dto.Email);
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
         if (user is null)
         {
             return Unauthorized("Invalid email or password");
@@ -70,32 +95,38 @@ public class AuthController : ControllerBase
             return Unauthorized("Invalid email or password");
         }
 
-        SessionAuth.SignIn(HttpContext, user.Id, user.Role);
-        return Ok(UserMapper.ToResponse(user));
+        return Ok(new AuthResponseDto
+        {
+            User = UserMapper.ToResponse(user),
+            Token = _tokenService.CreateToken(user)
+        });
     }
 
     [HttpPost("logout")]
     public IActionResult Logout()
     {
-        SessionAuth.SignOut(HttpContext);
-        return Ok(new { message = "Signed out." });
+        return NoContent();
     }
 
     [HttpPut("password")]
     [RequireRole]
-    public IActionResult ChangePassword(ChangePasswordDto dto)
+    public async Task<IActionResult> ChangePassword(ChangePasswordDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext);
-        if (denied is not null)
+        var userId = SessionAuth.GetUserId(HttpContext);
+        if (userId is null)
         {
-            return denied;
+            return Unauthorized();
         }
 
-        var userId = SessionAuth.GetUserId(HttpContext)!.Value;
-        var user = _db.Users.Find(userId);
+        var user = await _db.Users.FindAsync(userId.Value);
         if (user is null)
         {
             return Unauthorized();
+        }
+
+        if (!IsStrongPassword(dto.NewPassword))
+        {
+            return BadRequest("Password must be at least 12 characters and include upper-case, lower-case, numeric, and non-alphanumeric characters.");
         }
 
         var verification = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, dto.CurrentPassword);
@@ -106,7 +137,14 @@ public class AuthController : ControllerBase
 
         user.PasswordHash = _passwordHasher.HashPassword(user, dto.NewPassword);
         user.MustChangePassword = false;
-        _db.SaveChanges();
+        await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    private static bool IsStrongPassword(string password) =>
+        password.Length >= 12 &&
+        password.Any(char.IsUpper) &&
+        password.Any(char.IsLower) &&
+        password.Any(char.IsDigit) &&
+        password.Any(c => !char.IsLetterOrDigit(c));
 }
