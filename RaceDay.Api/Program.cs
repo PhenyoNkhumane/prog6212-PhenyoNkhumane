@@ -1,26 +1,41 @@
-using System.Text.Json.Serialization;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using Microsoft.IdentityModel.Tokens;
 using RaceDay.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers().AddJsonOptions(options =>
-{
-    options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-});
+builder.Services.AddControllers();
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession(options =>
+var jwtSigningKey = builder.Configuration["Jwt:SigningKey"];
+if (string.IsNullOrWhiteSpace(jwtSigningKey) || Encoding.UTF8.GetByteCount(jwtSigningKey) < 32)
 {
-    options.Cookie.Name = ".RaceDay.Session";
-    options.IdleTimeout = TimeSpan.FromHours(8);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-});
-builder.Services.AddAuthentication();
+    throw new InvalidOperationException("Configure Jwt:SigningKey with a value of at least 32 bytes.");
+}
+
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "RaceDay.Api";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "RaceDay.Client";
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey)),
+            ValidateLifetime = true,
+            RoleClaimType = System.Security.Claims.ClaimTypes.Role,
+            NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier
+        };
+    });
 builder.Services.AddAuthorization();
+builder.Services.AddScoped<RaceDay.Api.Services.JwtTokenService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -29,12 +44,14 @@ builder.Services.AddSwaggerGen(options =>
         Title = "RaceDay API",
         Version = "v1"
     });
-    options.AddSecurityDefinition("Session", new OpenApiSecurityScheme
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "Log in with POST /api/auth/login. The session cookie is sent automatically on later requests. Use this Authorize button to document that protected endpoints require a session.",
-        Name = "Cookie",
+        Description = "Paste the JWT returned by POST /api/auth/login.",
+        Name = "Authorization",
         In = ParameterLocation.Header,
-        Type = SecuritySchemeType.ApiKey
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        Type = SecuritySchemeType.Http
     });
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
@@ -44,7 +61,7 @@ builder.Services.AddSwaggerGen(options =>
                 Reference = new OpenApiReference
                 {
                     Type = ReferenceType.SecurityScheme,
-                    Id = "Session"
+                    Id = "Bearer"
                 }
             },
             Array.Empty<string>()
@@ -61,8 +78,23 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseSession();
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    var mustChangePassword = context.User.FindFirst("must_change_password")?.Value == "true";
+    var isPasswordChange = context.Request.Path.Equals("/api/auth/password", StringComparison.OrdinalIgnoreCase)
+        && HttpMethods.IsPut(context.Request.Method);
+    var isLogout = context.Request.Path.Equals("/api/auth/logout", StringComparison.OrdinalIgnoreCase)
+        && HttpMethods.IsPost(context.Request.Method);
+    if (context.User.Identity?.IsAuthenticated == true && mustChangePassword && !isPasswordChange && !isLogout)
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsJsonAsync(new { error = "Change your temporary password before continuing." });
+        return;
+    }
+
+    await next();
+});
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
