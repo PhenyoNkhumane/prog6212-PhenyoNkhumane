@@ -1,12 +1,18 @@
 using Microsoft.EntityFrameworkCore;
+using RaceDay.Api.Services;
 using RaceDay.Api.Models;
 
 namespace RaceDay.Api.Data;
 
 public class ApplicationDbContext : DbContext
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
+    private readonly IdentityNumberProtector _identityNumberProtector;
+
+    public ApplicationDbContext(
+        DbContextOptions<ApplicationDbContext> options,
+        IdentityNumberProtector identityNumberProtector) : base(options)
     {
+        _identityNumberProtector = identityNumberProtector;
     }
 
     public DbSet<User> Users => Set<User>();
@@ -32,7 +38,12 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.FirstName).HasColumnName("first_name").HasMaxLength(100);
             entity.Property(e => e.LastName).HasColumnName("last_name").HasMaxLength(100);
             entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(20);
-            entity.Property(e => e.IdNumberOrPassport).HasColumnName("id_number_or_passport").HasMaxLength(50);
+            entity.Property(e => e.IdNumberOrPassport)
+                .HasColumnName("id_number_or_passport")
+                .HasMaxLength(512)
+                .HasConversion(
+                    value => _identityNumberProtector.Protect(value),
+                    value => _identityNumberProtector.Unprotect(value));
             entity.Property(e => e.AsaPermanentLicenseNumber).HasColumnName("asa_permanent_license_number").HasMaxLength(50);
             entity.Property(e => e.MustChangePassword).HasColumnName("must_change_password");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
@@ -85,6 +96,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Event>(entity =>
         {
             entity.ToTable("Event");
+            entity.HasIndex(e => e.OrganiserId);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.OrganiserId).HasColumnName("organiser_id");
             entity.Property(e => e.Title).HasColumnName("title").HasMaxLength(200);
@@ -104,6 +116,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Category>(entity =>
         {
             entity.ToTable("Category");
+            entity.HasIndex(e => e.EventId);
+            entity.HasIndex(e => e.DisciplineId);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.EventId).HasColumnName("event_id");
             entity.Property(e => e.DisciplineId).HasColumnName("discipline_id");
@@ -126,7 +140,11 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Registration>(entity =>
         {
             entity.ToTable("Registration");
-            entity.HasIndex(e => new { e.ParticipantId, e.CategoryId }).IsUnique();
+            entity.HasIndex(e => new { e.ParticipantId, e.CategoryId })
+                .IsUnique()
+                .HasFilter("status = 'Active'");
+            entity.HasIndex(e => e.CategoryId);
+            entity.HasIndex(e => e.ParticipantId);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.ParticipantId).HasColumnName("participant_id");
             entity.Property(e => e.CategoryId).HasColumnName("category_id");
@@ -166,6 +184,8 @@ public class ApplicationDbContext : DbContext
         {
             entity.ToTable("ClubMembership");
             entity.HasIndex(e => new { e.ParticipantId, e.DisciplineId }).IsUnique();
+            entity.HasIndex(e => e.ClubId);
+            entity.HasIndex(e => e.DisciplineId);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.ParticipantId).HasColumnName("participant_id");
             entity.Property(e => e.ClubId).HasColumnName("club_id");

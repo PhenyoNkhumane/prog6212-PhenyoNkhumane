@@ -24,19 +24,13 @@ public class ResultsController : ControllerBase
     [RequireRole(Roles.Organiser)]
     public IActionResult CreateResult(int eventId, CreateResultDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var ev = _db.Events.Find(eventId);
         if (ev is null)
         {
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -46,6 +40,11 @@ public class ResultsController : ControllerBase
         if (registration is null || registration.Category?.EventId != eventId)
         {
             return NotFound();
+        }
+
+        if (registration.Status != "Active")
+        {
+            return Conflict("Results can only be recorded for active registrations.");
         }
 
         if (_db.Results.Any(r => r.RegistrationId == dto.RegistrationId))
@@ -63,6 +62,13 @@ public class ResultsController : ControllerBase
             return BadRequest("Positions must be greater than zero.");
         }
 
+        var validation = ValidateResultValues(dto.GunTime, dto.NetTime, dto.OverallPosition,
+            dto.CategoryPosition, eventId, registration.CategoryId);
+        if (validation is not null)
+        {
+            return validation;
+        }
+
         var result = new Result
         {
             RegistrationId = dto.RegistrationId,
@@ -74,19 +80,13 @@ public class ResultsController : ControllerBase
         };
         _db.Results.Add(result);
         _db.SaveChanges();
-        return Created($"/api/results/{result.Id}", result);
+        return Created($"/api/results/{result.Id}", ResponseMapper.ToResponse(result));
     }
 
     [HttpPut("{resultId:int}")]
     [RequireRole(Roles.Organiser)]
     public IActionResult UpdateResult(int resultId, UpdateResultDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var result = _db.Results
             .Include(r => r.Registration)
             .ThenInclude(r => r!.Category)
@@ -103,7 +103,7 @@ public class ResultsController : ControllerBase
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -118,19 +118,32 @@ public class ResultsController : ControllerBase
             return BadRequest("Positions must be greater than zero.");
         }
 
+        var validation = ValidateResultValues(
+            dto.GunTime ?? result.GunTime,
+            dto.NetTime ?? result.NetTime,
+            dto.OverallPosition ?? result.OverallPosition,
+            dto.CategoryPosition ?? result.CategoryPosition,
+            ev.Id,
+            result.Registration!.CategoryId,
+            result.Id);
+        if (validation is not null)
+        {
+            return validation;
+        }
+
         result.GunTime = dto.GunTime ?? result.GunTime;
         result.NetTime = dto.NetTime ?? result.NetTime;
         result.OverallPosition = dto.OverallPosition ?? result.OverallPosition;
         result.CategoryPosition = dto.CategoryPosition ?? result.CategoryPosition;
         result.Status = dto.Status ?? result.Status;
         _db.SaveChanges();
-        return Ok(result);
+        return Ok(ResponseMapper.ToResponse(result));
     }
 
     [HttpGet("~/api/events/{eventId:int}/results")]
     public IActionResult GetForEvent(int eventId)
     {
-        if (!_db.Events.Any(e => e.Id == eventId))
+        if (!_db.Events.Any(e => e.Id == eventId && e.Status == "Published"))
         {
             return NotFound();
         }
@@ -138,7 +151,18 @@ public class ResultsController : ControllerBase
         var results = _db.Results
             .Include(r => r.Registration)
             .ThenInclude(r => r!.Category)
-            .Where(r => r.Registration!.Category!.EventId == eventId)
+            .Where(r => r.Registration!.Category!.EventId == eventId &&
+                r.Registration.Status == "Active")
+            .Select(r => new ResultResponseDto
+            {
+                Id = r.Id,
+                CategoryId = r.Registration!.CategoryId,
+                GunTime = r.GunTime,
+                NetTime = r.NetTime,
+                OverallPosition = r.OverallPosition,
+                CategoryPosition = r.CategoryPosition,
+                Status = r.Status
+            })
             .ToList();
         return Ok(results);
     }
@@ -147,16 +171,18 @@ public class ResultsController : ControllerBase
     [RequireRole(Roles.Participant)]
     public IActionResult GetMine()
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant);
-        if (denied is not null)
+        var userId = CurrentUser.GetUserId(HttpContext);
+        if (userId is null)
         {
-            return denied;
+            return Unauthorized();
         }
 
-        var userId = SessionAuth.GetUserId(HttpContext)!.Value;
         var results = _db.Results
             .Include(r => r.Registration)
+            .ThenInclude(r => r!.Category)
             .Where(r => r.Registration!.ParticipantId == userId)
+            .AsEnumerable()
+            .Select(ResponseMapper.ToResponse)
             .ToList();
         return Ok(results);
     }
@@ -165,12 +191,6 @@ public class ResultsController : ControllerBase
     [RequireRole(Roles.Participant, Roles.Organiser)]
     public IActionResult GetResult(int resultId)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var result = _db.Results
             .Include(r => r.Registration)
             .ThenInclude(r => r!.Category)
@@ -180,8 +200,8 @@ public class ResultsController : ControllerBase
             return NotFound();
         }
 
-        var userId = SessionAuth.GetUserId(HttpContext)!.Value;
-        var role = SessionAuth.GetRole(HttpContext);
+        var userId = CurrentUser.GetUserId(HttpContext)!.Value;
+        var role = CurrentUser.GetRole(HttpContext);
         if (role == Roles.Participant && result.Registration?.ParticipantId != userId)
         {
             return StatusCode(StatusCodes.Status403Forbidden);
@@ -197,6 +217,33 @@ public class ResultsController : ControllerBase
             }
         }
 
-        return Ok(result);
+        return Ok(ResponseMapper.ToResponse(result));
+    }
+
+    private IActionResult? ValidateResultValues(TimeOnly? gunTime, TimeOnly? netTime,
+        int? overallPosition, int? categoryPosition, int eventId, int categoryId, int? resultId = null)
+    {
+        if (gunTime is not null && netTime is not null && netTime > gunTime)
+        {
+            return BadRequest("Net time cannot be greater than gun time.");
+        }
+
+        if (overallPosition is not null && _db.Results.Any(r =>
+                r.Id != resultId &&
+                r.OverallPosition == overallPosition &&
+                r.Registration!.Category!.EventId == eventId))
+        {
+            return Conflict("Overall position is already assigned for this event.");
+        }
+
+        if (categoryPosition is not null && _db.Results.Any(r =>
+                r.Id != resultId &&
+                r.CategoryPosition == categoryPosition &&
+                r.Registration!.CategoryId == categoryId))
+        {
+            return Conflict("Category position is already assigned.");
+        }
+
+        return null;
     }
 }

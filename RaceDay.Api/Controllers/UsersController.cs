@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using RaceDay.Api.Data;
 using RaceDay.Api.Dtos;
 using RaceDay.Api.Services;
@@ -17,16 +18,11 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("me")]
-    [RequireRole]
+    [Authorize]
     public IActionResult GetMe()
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
-        var user = _db.Users.Find(SessionAuth.GetUserId(HttpContext)!.Value);
+        var userId = CurrentUser.GetUserId(HttpContext);
+        var user = userId is null ? null : _db.Users.Find(userId.Value);
         if (user is null)
         {
             return Unauthorized();
@@ -36,16 +32,11 @@ public class UsersController : ControllerBase
     }
 
     [HttpPut("me")]
-    [RequireRole]
+    [Authorize]
     public IActionResult UpdateMe(UpdateProfileDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
-        var user = _db.Users.Find(SessionAuth.GetUserId(HttpContext)!.Value);
+        var userId = CurrentUser.GetUserId(HttpContext);
+        var user = userId is null ? null : _db.Users.Find(userId.Value);
         if (user is null)
         {
             return Unauthorized();
@@ -70,14 +61,22 @@ public class UsersController : ControllerBase
     [RequireRole(Roles.Participant)]
     public IActionResult GetMyMemberships()
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant);
-        if (denied is not null)
+        var userId = CurrentUser.GetUserId(HttpContext);
+        if (userId is null)
         {
-            return denied;
+            return Unauthorized();
         }
 
-        var userId = SessionAuth.GetUserId(HttpContext)!.Value;
-        var memberships = _db.ClubMemberships.Where(m => m.ParticipantId == userId).ToList();
+        var memberships = _db.ClubMemberships.Where(m => m.ParticipantId == userId)
+            .Select(membership => new MembershipResponseDto
+            {
+                Id = membership.Id,
+                ClubId = membership.ClubId,
+                DisciplineId = membership.DisciplineId,
+                MembershipNumber = membership.MembershipNumber,
+                JoinedAt = membership.JoinedAt,
+                Status = membership.Status
+            }).ToList();
         return Ok(memberships);
     }
 }
