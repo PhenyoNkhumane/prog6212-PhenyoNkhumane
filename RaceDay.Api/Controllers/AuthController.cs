@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -15,13 +14,11 @@ namespace RaceDay.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
-    private readonly JwtTokenService _tokenService;
     private readonly PasswordHasher<User> _passwordHasher = new();
 
-    public AuthController(ApplicationDbContext db, JwtTokenService tokenService)
+    public AuthController(ApplicationDbContext db)
     {
         _db = db;
-        _tokenService = tokenService;
     }
 
     [HttpPost("register")]
@@ -75,11 +72,9 @@ public class AuthController : ControllerBase
         await _db.SaveChangesAsync();
         await transaction.CommitAsync();
 
-        return Created("/api/users/me", new AuthResponseDto
-        {
-            User = UserMapper.ToResponse(user),
-            Token = _tokenService.CreateToken(user)
-        });
+        // Registering also logs the user in: store ID and role in the server-side session.
+        CurrentUser.SignIn(HttpContext, user.Id, user.Role);
+        return Created("/api/users/me", UserMapper.ToResponse(user));
     }
 
     [HttpPost("login")]
@@ -98,21 +93,19 @@ public class AuthController : ControllerBase
             return Unauthorized("Invalid email or password");
         }
 
-        return Ok(new AuthResponseDto
-        {
-            User = UserMapper.ToResponse(user),
-            Token = _tokenService.CreateToken(user)
-        });
+        CurrentUser.SignIn(HttpContext, user.Id, user.Role);
+        return Ok(UserMapper.ToResponse(user));
     }
 
     [HttpPost("logout")]
     public IActionResult Logout()
     {
+        CurrentUser.SignOut(HttpContext);
         return NoContent();
     }
 
     [HttpPut("password")]
-    [Authorize]
+    [RequireLogin]
     public async Task<IActionResult> ChangePassword(ChangePasswordDto dto)
     {
         var userId = CurrentUser.GetUserId(HttpContext);

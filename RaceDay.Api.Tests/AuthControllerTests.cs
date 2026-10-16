@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using RaceDay.Api.Controllers;
 using RaceDay.Api.Dtos;
 using RaceDay.Api.Services;
@@ -10,7 +9,7 @@ namespace RaceDay.Api.Tests;
 public class AuthControllerTests
 {
     [Fact]
-    public async Task Register_NewParticipant_ReturnsCreatedAndSavesUser()
+    public async Task Register_NewParticipant_ReturnsCreatedSavesUserAndStartsSession()
     {
         // Arrange
         using var db = TestDbFactory.Create();
@@ -32,8 +31,11 @@ public class AuthControllerTests
         Assert.IsType<CreatedResult>(result);
         Assert.Single(db.Users);
         Assert.Single(db.Participants);
-        Assert.Equal(Roles.Participant, db.Users.Single().Role);
-        Assert.NotEqual("Secret123!", db.Users.Single().PasswordHash);
+        var saved = db.Users.Single();
+        Assert.Equal(Roles.Participant, saved.Role);
+        Assert.NotEqual("Secret123!xyz", saved.PasswordHash);
+        Assert.Equal(saved.Id, CurrentUser.GetUserId(controller.HttpContext));
+        Assert.Equal(Roles.Participant, CurrentUser.GetRole(controller.HttpContext));
     }
 
     [Fact]
@@ -59,13 +61,17 @@ public class AuthControllerTests
         // Assert
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Single(db.Users);
+        Assert.Null(CurrentUser.GetUserId(controller.HttpContext));
     }
 
     [Fact]
-    public async Task Register_Organiser_CreatesOrganiserSubtypeAndJwt()
+    public async Task Register_Organiser_CreatesOrganiserSubtypeAndSessionRole()
     {
+        // Arrange
         using var db = TestDbFactory.Create();
         var controller = CreateController(db);
+
+        // Act
         var result = await controller.Register(new RegisterDto
         {
             Email = "organiser@example.test",
@@ -76,17 +82,45 @@ public class AuthControllerTests
             Role = Roles.Organiser
         });
 
+        // Assert
         Assert.IsType<CreatedResult>(result);
         Assert.Single(db.Organisers);
         Assert.Empty(db.Participants);
         Assert.Equal(Roles.Organiser, db.Users.Single().Role);
+        Assert.Equal(Roles.Organiser, CurrentUser.GetRole(controller.HttpContext));
+    }
+
+    [Fact]
+    public async Task Register_InvalidRole_ReturnsBadRequest()
+    {
+        // Arrange
+        using var db = TestDbFactory.Create();
+        var controller = CreateController(db);
+
+        // Act
+        var result = await controller.Register(new RegisterDto
+        {
+            Email = "admin@example.test",
+            Password = "StrongPassword123!",
+            FirstName = "Eve",
+            LastName = "Hacker",
+            IdNumberOrPassport = "TEST-ID",
+            Role = "Admin"
+        });
+
+        // Assert
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Empty(db.Users);
     }
 
     [Fact]
     public async Task Register_WeakPassword_ReturnsBadRequest()
     {
+        // Arrange
         using var db = TestDbFactory.Create();
         var controller = CreateController(db);
+
+        // Act
         var result = await controller.Register(new RegisterDto
         {
             Email = "runner@example.test",
@@ -97,18 +131,18 @@ public class AuthControllerTests
             Role = Roles.Participant
         });
 
+        // Assert
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Empty(db.Users);
     }
 
     [Fact]
-    public async Task Login_ValidCredentials_ReturnsOkAndToken()
+    public async Task Login_ValidCredentials_ReturnsOkAndStoresUserIdAndRoleInSession()
     {
         // Arrange
         using var db = TestDbFactory.Create();
         var user = ControllerTestHelper.AddParticipant(db, "runner@raceday.co.za", "Secret123!");
         var controller = CreateController(db);
-        ControllerTestHelper.AttachUser(controller);
         var dto = new LoginDto { Email = "runner@raceday.co.za", Password = "Secret123!" };
 
         // Act
@@ -116,9 +150,10 @@ public class AuthControllerTests
 
         // Assert
         var ok = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<AuthResponseDto>(ok.Value);
-        Assert.NotEmpty(response.Token);
-        Assert.Equal(user.Id, response.User.Id);
+        var response = Assert.IsType<UserResponseDto>(ok.Value);
+        Assert.Equal(user.Id, response.Id);
+        Assert.Equal(user.Id, CurrentUser.GetUserId(controller.HttpContext));
+        Assert.Equal(Roles.Participant, CurrentUser.GetRole(controller.HttpContext));
         var json = JsonSerializer.Serialize(ok.Value);
         Assert.DoesNotContain("PasswordHash", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Secret123!", json);
@@ -130,7 +165,6 @@ public class AuthControllerTests
         // Arrange
         using var db = TestDbFactory.Create();
         var controller = CreateController(db);
-        ControllerTestHelper.AttachUser(controller);
         var dto = new LoginDto { Email = "missing@raceday.co.za", Password = "Secret123!" };
 
         // Act
@@ -139,16 +173,16 @@ public class AuthControllerTests
         // Assert
         var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal("Invalid email or password", unauthorized.Value);
+        Assert.Null(CurrentUser.GetUserId(controller.HttpContext));
     }
 
     [Fact]
-    public async Task Login_WrongPassword_ReturnsUnauthorized()
+    public async Task Login_WrongPassword_ReturnsUnauthorizedAndNoSession()
     {
         // Arrange
         using var db = TestDbFactory.Create();
         ControllerTestHelper.AddParticipant(db, "runner@raceday.co.za", "Secret123!");
         var controller = CreateController(db);
-        ControllerTestHelper.AttachUser(controller);
         var dto = new LoginDto { Email = "runner@raceday.co.za", Password = "WrongPassword" };
 
         // Act
@@ -157,7 +191,26 @@ public class AuthControllerTests
         // Assert
         var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal("Invalid email or password", unauthorized.Value);
-        Assert.False(controller.HttpContext.User.Identity?.IsAuthenticated);
+        Assert.Null(CurrentUser.GetUserId(controller.HttpContext));
+        Assert.Null(CurrentUser.GetRole(controller.HttpContext));
+    }
+
+    [Fact]
+    public void Logout_ClearsSession()
+    {
+        // Arrange
+        using var db = TestDbFactory.Create();
+        var user = ControllerTestHelper.AddParticipant(db, "runner@raceday.co.za", "Secret123!");
+        var controller = CreateController(db);
+        ControllerTestHelper.AttachUser(controller, user.Id, Roles.Participant);
+
+        // Act
+        var result = controller.Logout();
+
+        // Assert
+        Assert.IsType<NoContentResult>(result);
+        Assert.Null(CurrentUser.GetUserId(controller.HttpContext));
+        Assert.Null(CurrentUser.GetRole(controller.HttpContext));
     }
 
     [Fact]
@@ -166,7 +219,6 @@ public class AuthControllerTests
         // Arrange
         using var db = TestDbFactory.Create();
         var controller = CreateController(db);
-        ControllerTestHelper.AttachUser(controller);
         var dto = new ChangePasswordDto { CurrentPassword = "Secret123!", NewPassword = "NewSecret123!" };
 
         // Act
@@ -197,14 +249,8 @@ public class AuthControllerTests
 
     private static AuthController CreateController(RaceDay.Api.Data.ApplicationDbContext db)
     {
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Jwt:SigningKey"] = "test-only-signing-key-at-least-32-bytes",
-                ["Jwt:Issuer"] = "RaceDay.Api",
-                ["Jwt:Audience"] = "RaceDay.Client"
-            })
-            .Build();
-        return new AuthController(db, new JwtTokenService(config));
+        var controller = new AuthController(db);
+        ControllerTestHelper.AttachUser(controller);
+        return controller;
     }
 }

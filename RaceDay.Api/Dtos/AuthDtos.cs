@@ -36,12 +36,6 @@ public class UserResponseDto
     public DateTime CreatedAt { get; set; }
 }
 
-public class AuthResponseDto
-{
-    public required UserResponseDto User { get; set; }
-    public required string Token { get; set; }
-}
-
 public class UpdateProfileDto
 {
     public string? FirstName { get; set; }

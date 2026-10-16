@@ -1,7 +1,5 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -11,49 +9,157 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RaceDay.Api.Data;
-using RaceDay.Api.Models;
 using RaceDay.Api.Services;
 
 namespace RaceDay.Api.Tests;
 
-public class AuthorizationPipelineTests
+/// <summary>
+/// Full-pipeline tests: real HTTP requests, real session cookie, real [RequireRole] filters.
+/// Direct controller calls cannot exercise the role attributes, so role enforcement is proved here.
+/// </summary>
+public class AuthorizationPipelineTests : IClassFixture<AuthorizationPipelineTests.ApiFactory>
 {
-    [Fact]
-    public async Task BearerTokenAuthenticatesAndEnforcesRoleThroughPipeline()
+    private const string StrongPassword = "StrongPassword123!";
+    private readonly ApiFactory _factory;
+
+    public AuthorizationPipelineTests(ApiFactory factory)
     {
-        using var factory = new ApiFactory();
-        using var client = factory.CreateClient();
-        using (var scope = factory.Services.CreateScope())
+        _factory = factory;
+    }
+
+    public static TheoryData<string, string> OrganiserOnlyRoutes => new()
+    {
+        { "POST", "/api/events" },
+        { "PUT", "/api/events/1" },
+        { "DELETE", "/api/events/1" },
+        { "POST", "/api/events/1/categories" },
+        { "PUT", "/api/categories/1" },
+        { "DELETE", "/api/categories/1" },
+        { "GET", "/api/events/1/registrations" },
+        { "POST", "/api/events/1/results" },
+        { "PUT", "/api/results/1" },
+        { "POST", "/api/disciplines" },
+        { "POST", "/api/clubs" }
+    };
+
+    public static TheoryData<string, string> ParticipantOnlyRoutes => new()
+    {
+        { "POST", "/api/events/1/registrations" },
+        { "GET", "/api/registrations/me" },
+        { "GET", "/api/results/me" },
+        { "GET", "/api/users/me/memberships" },
+        { "POST", "/api/clubs/1/memberships" }
+    };
+
+    public static TheoryData<string, string> LoginRequiredRoutes => new()
+    {
+        { "GET", "/api/users/me" },
+        { "PUT", "/api/users/me" },
+        { "PUT", "/api/auth/password" }
+    };
+
+    [Theory]
+    [MemberData(nameof(OrganiserOnlyRoutes))]
+    [MemberData(nameof(ParticipantOnlyRoutes))]
+    [MemberData(nameof(LoginRequiredRoutes))]
+    public async Task ProtectedRoute_WithoutSession_ReturnsUnauthorized(string method, string url)
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.SendAsync(Request(method, url));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(OrganiserOnlyRoutes))]
+    public async Task OrganiserRoute_AsParticipant_ReturnsForbidden(string method, string url)
+    {
+        using var client = await SignedInClientAsync(Roles.Participant);
+
+        var response = await client.SendAsync(Request(method, url));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [MemberData(nameof(ParticipantOnlyRoutes))]
+    public async Task ParticipantRoute_AsOrganiser_ReturnsForbidden(string method, string url)
+    {
+        using var client = await SignedInClientAsync(Roles.Organiser);
+
+        var response = await client.SendAsync(Request(method, url));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Register_StartsSession_SoProfileIsReadable()
+    {
+        using var client = await SignedInClientAsync(Roles.Participant);
+
+        var response = await client.GetAsync("/api/users/me");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Login_StartsSessionOnNewClient()
+    {
+        var email = $"{Guid.NewGuid():N}@example.test";
+        using (var registering = _factory.CreateClient())
         {
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.EnsureCreated();
+            var registered = await registering.PostAsJsonAsync("/api/auth/register", RegisterBody(email, Roles.Participant));
+            Assert.Equal(HttpStatusCode.Created, registered.StatusCode);
         }
 
-        var registerResponse = await client.PostAsJsonAsync("/api/auth/register", new
+        using var client = _factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/auth/login", new { email, password = StrongPassword });
+        var profile = await client.GetAsync("/api/users/me");
+
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, profile.StatusCode);
+    }
+
+    [Fact]
+    public async Task Login_WrongPassword_DoesNotStartSession()
+    {
+        var email = $"{Guid.NewGuid():N}@example.test";
+        using (var registering = _factory.CreateClient())
         {
-            email = "pipeline@example.test",
-            password = "StrongPassword123!",
-            firstName = "Taylor",
-            lastName = "Runner",
-            idNumberOrPassport = "TEST-ID-PIPELINE",
-            role = "Participant"
-        });
-        Assert.Equal(HttpStatusCode.Created, registerResponse.StatusCode);
+            await registering.PostAsJsonAsync("/api/auth/register", RegisterBody(email, Roles.Participant));
+        }
 
-        using var responseJson = JsonDocument.Parse(await registerResponse.Content.ReadAsStringAsync());
-        var token = responseJson.RootElement.GetProperty("token").GetString();
-        Assert.False(string.IsNullOrWhiteSpace(token));
+        using var client = _factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/api/auth/login", new { email, password = "WrongPassword123!" });
+        var profile = await client.GetAsync("/api/users/me");
 
-        using var noTokenRequest = new HttpRequestMessage(HttpMethod.Post, "/api/events");
-        noTokenRequest.Content = JsonContent.Create(new { });
-        var noTokenResponse = await client.SendAsync(noTokenRequest);
-        Assert.Equal(HttpStatusCode.Unauthorized, noTokenResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, login.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, profile.StatusCode);
+    }
 
-        using var wrongRoleRequest = new HttpRequestMessage(HttpMethod.Post, "/api/events");
-        wrongRoleRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        wrongRoleRequest.Content = JsonContent.Create(new
+    [Fact]
+    public async Task Logout_EndsServerSideSession()
+    {
+        using var client = await SignedInClientAsync(Roles.Participant);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/users/me")).StatusCode);
+
+        var logout = await client.PostAsync("/api/auth/logout", null);
+        var afterLogout = await client.GetAsync("/api/users/me");
+
+        Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, afterLogout.StatusCode);
+    }
+
+    [Fact]
+    public async Task Organiser_CanCreateEvent_ThroughPipeline()
+    {
+        using var client = await SignedInClientAsync(Roles.Organiser);
+
+        var response = await client.PostAsJsonAsync("/api/events", new
         {
             title = "Pipeline event",
-            date = "2027-10-10",
+            date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)).ToString("yyyy-MM-dd"),
             venueName = "Test venue",
             city = "Test city",
             province = "Test province",
@@ -61,78 +167,57 @@ public class AuthorizationPipelineTests
             eventType = "Run",
             status = "Published"
         });
-        var wrongRoleResponse = await client.SendAsync(wrongRoleRequest);
-        Assert.Equal(HttpStatusCode.Forbidden, wrongRoleResponse.StatusCode);
 
-        const string organiserEmail = "temporary@example.test";
-        using (var scope = factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var organiser = ControllerTestHelper.AddOrganiser(db, organiserEmail, "StrongPassword123!");
-            organiser.MustChangePassword = true;
-            db.SaveChanges();
-        }
-
-        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new
-        {
-            email = organiserEmail,
-            password = "StrongPassword123!"
-        });
-        loginResponse.EnsureSuccessStatusCode();
-        using var temporaryAuth = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync());
-        var temporaryToken = temporaryAuth.RootElement.GetProperty("token").GetString();
-
-        using var blockedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/users/me");
-        blockedRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", temporaryToken);
-        var blockedResponse = await client.SendAsync(blockedRequest);
-        Assert.Equal(HttpStatusCode.Forbidden, blockedResponse.StatusCode);
-
-        using var passwordRequest = new HttpRequestMessage(HttpMethod.Put, "/api/auth/password");
-        passwordRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", temporaryToken);
-        passwordRequest.Content = JsonContent.Create(new
-        {
-            currentPassword = "StrongPassword123!",
-            newPassword = "ChangedPassword456!"
-        });
-        var passwordResponse = await client.SendAsync(passwordRequest);
-        Assert.True(passwordResponse.StatusCode == HttpStatusCode.NoContent,
-            await passwordResponse.Content.ReadAsStringAsync());
-
-        var updatedLogin = await client.PostAsJsonAsync("/api/auth/login", new
-        {
-            email = organiserEmail,
-            password = "ChangedPassword456!"
-        });
-        updatedLogin.EnsureSuccessStatusCode();
-        using var updatedAuth = JsonDocument.Parse(await updatedLogin.Content.ReadAsStringAsync());
-        var updatedToken = updatedAuth.RootElement.GetProperty("token").GetString();
-        using var allowedRequest = new HttpRequestMessage(HttpMethod.Get, "/api/users/me");
-        allowedRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", updatedToken);
-        var allowedResponse = await client.SendAsync(allowedRequest);
-        Assert.Equal(HttpStatusCode.OK, allowedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
-    private sealed class ApiFactory : WebApplicationFactory<Program>
+    private async Task<HttpClient> SignedInClientAsync(string role)
+    {
+        var client = _factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/auth/register",
+            RegisterBody($"{Guid.NewGuid():N}@example.test", role));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return client;
+    }
+
+    private static object RegisterBody(string email, string role) => new
+    {
+        email,
+        password = StrongPassword,
+        firstName = "Test",
+        lastName = role,
+        idNumberOrPassport = "TEST-ID-PIPELINE",
+        role
+    };
+
+    private static HttpRequestMessage Request(string method, string url)
+    {
+        var request = new HttpRequestMessage(new HttpMethod(method), url);
+        if (method is "POST" or "PUT")
+        {
+            request.Content = JsonContent.Create(new { });
+        }
+
+        return request;
+    }
+
+    public sealed class ApiFactory : WebApplicationFactory<Program>
     {
         private readonly SqliteConnection _connection = new("Data Source=:memory:");
 
         public ApiFactory()
         {
             _connection.Open();
+            using var scope = Services.CreateScope();
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.EnsureCreated();
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
-            builder.UseSetting("Jwt:SigningKey", "pipeline-test-key-with-more-than-32-bytes");
-            builder.UseSetting("Jwt:Issuer", "RaceDay.Api");
-            builder.UseSetting("Jwt:Audience", "RaceDay.Client");
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Jwt:SigningKey"] = "pipeline-test-key-with-more-than-32-bytes",
-                    ["Jwt:Issuer"] = "RaceDay.Api",
-                    ["Jwt:Audience"] = "RaceDay.Client",
                     ["Identity:EncryptionKey"] = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
                 }));
             builder.ConfigureServices(services =>

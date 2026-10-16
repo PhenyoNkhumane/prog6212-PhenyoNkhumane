@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using RaceDay.Api.Data;
 using RaceDay.Api.Models;
 using RaceDay.Api.Services;
@@ -10,16 +9,14 @@ namespace RaceDay.Api.Tests;
 
 public static class ControllerTestHelper
 {
+    // Gives the controller a fresh server-side session. When userId is supplied the
+    // session already holds that user's ID and role, as if they had logged in.
     public static void AttachUser(ControllerBase controller, int? userId = null, string? role = null)
     {
-        var context = new DefaultHttpContext();
+        var context = new DefaultHttpContext { Session = new TestSession() };
         if (userId is not null)
         {
-            context.User = new ClaimsPrincipal(new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.NameIdentifier, userId.Value.ToString()),
-                new Claim(ClaimTypes.Role, role ?? string.Empty)
-            ], "Test"));
+            CurrentUser.SignIn(context, userId.Value, role ?? string.Empty);
         }
 
         controller.ControllerContext = new ControllerContext

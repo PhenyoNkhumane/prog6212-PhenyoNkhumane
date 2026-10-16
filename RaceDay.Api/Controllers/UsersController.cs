@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
 using RaceDay.Api.Data;
 using RaceDay.Api.Dtos;
 using RaceDay.Api.Services;
@@ -18,7 +17,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("me")]
-    [Authorize]
+    [RequireLogin]
     public IActionResult GetMe()
     {
         var userId = CurrentUser.GetUserId(HttpContext);
@@ -32,7 +31,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpPut("me")]
-    [Authorize]
+    [RequireLogin]
     public IActionResult UpdateMe(UpdateProfileDto dto)
     {
         var userId = CurrentUser.GetUserId(HttpContext);

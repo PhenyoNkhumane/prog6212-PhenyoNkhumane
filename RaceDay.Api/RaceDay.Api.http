@@ -1,5 +1,6 @@
 @RaceDay.Api_HostAddress = http://localhost:5155
-@Jwt = replace-with-token-from-login
+
+# Registering or logging in starts a server-side session; the session cookie is reused by later requests.
 
 POST {{RaceDay.Api_HostAddress}}/api/auth/register
 Content-Type: application/json
@@ -25,5 +26,8 @@ Content-Type: application/json
 
 ###
 
-GET {{RaceDay.Api_HostAddress}}/api/events
-Authorization: Bearer {{Jwt}}
+GET {{RaceDay.Api_HostAddress}}/api/users/me
+
+###
+
+POST {{RaceDay.Api_HostAddress}}/api/auth/logout
