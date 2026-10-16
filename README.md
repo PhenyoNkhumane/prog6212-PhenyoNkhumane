@@ -80,5 +80,10 @@ dotnet test RaceDay.slnx
 Controller tests use SQLite in-memory so foreign keys, unique indexes, and transaction behavior are exercised rather than silently ignored.
 
 ## Continuous integration
+### CI/CD Workflow Evidence
+
+The screenshot below shows the GitHub Actions CI workflow used to restore, build, and test the RaceDay solution.
+
+![Successful CI/CD workflow run](docs/ci-cd-screenshot.png)
 
 GitHub Actions restores, builds, and tests the solution on .NET 10: [`dotNET.yml`](.github/workflows/dotNET.yml).
