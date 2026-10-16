@@ -86,4 +86,5 @@ The screenshot below shows the GitHub Actions CI workflow used to restore, build
 
 ![Successful CI/CD workflow run](docs/ci-cd-screenshot.png)
 
+
 GitHub Actions restores, builds, and tests the solution on .NET 10: [`dotNET.yml`](.github/workflows/dotNET.yml).
