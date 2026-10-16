@@ -20,7 +20,15 @@ public class ClubsController : ControllerBase
     [HttpGet]
     public IActionResult GetClubs()
     {
-        return Ok(_db.Clubs.ToList());
+        return Ok(_db.Clubs.Select(club => new ClubResponseDto
+        {
+            Id = club.Id,
+            Name = club.Name,
+            RegistrationNumber = club.RegistrationNumber,
+            ContactEmail = club.ContactEmail,
+            ContactNumber = club.ContactNumber,
+            CreatedAt = club.CreatedAt
+        }).ToList());
     }
 
     [HttpGet("{clubId:int}")]
@@ -32,19 +40,13 @@ public class ClubsController : ControllerBase
             return NotFound();
         }
 
-        return Ok(club);
+        return Ok(ResponseMapper.ToResponse(club));
     }
 
     [HttpPost]
     [RequireRole(Roles.Organiser)]
     public IActionResult CreateClub(CreateClubDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         if (_db.Clubs.Any(c => c.Name == dto.Name ||
             (dto.RegistrationNumber != null && c.RegistrationNumber == dto.RegistrationNumber)))
         {
@@ -61,25 +63,19 @@ public class ClubsController : ControllerBase
         };
         _db.Clubs.Add(club);
         _db.SaveChanges();
-        return Created($"/api/clubs/{club.Id}", club);
+        return Created($"/api/clubs/{club.Id}", ResponseMapper.ToResponse(club));
     }
 
     [HttpPost("{clubId:int}/memberships")]
     [RequireRole(Roles.Participant)]
     public IActionResult JoinClub(int clubId, CreateMembershipDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         if (!_db.Clubs.Any(c => c.Id == clubId) || !_db.Disciplines.Any(d => d.Id == dto.DisciplineId))
         {
             return NotFound();
         }
 
-        var participantId = SessionAuth.GetUserId(HttpContext)!.Value;
+        var participantId = CurrentUser.GetUserId(HttpContext)!.Value;
         if (_db.ClubMemberships.Any(m => m.ParticipantId == participantId && m.DisciplineId == dto.DisciplineId))
         {
             return Conflict("Already a member of a club for this discipline.");
@@ -96,6 +92,6 @@ public class ClubsController : ControllerBase
         };
         _db.ClubMemberships.Add(membership);
         _db.SaveChanges();
-        return Created($"/api/users/me/memberships", membership);
+        return Created("/api/users/me/memberships", ResponseMapper.ToResponse(membership));
     }
 }

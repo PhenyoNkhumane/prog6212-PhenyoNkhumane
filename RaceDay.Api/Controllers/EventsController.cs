@@ -77,7 +77,12 @@ public class EventsController : ControllerBase
             return BadRequest("Event date cannot be in the past.");
         }
 
-        var organiserId = SessionAuth.GetUserId(HttpContext)!.Value;
+        var organiserId = CurrentUser.GetUserId(HttpContext);
+        if (organiserId is null)
+        {
+            return Unauthorized();
+        }
+
         if (!_db.Organisers.Any(o => o.UserId == organiserId))
         {
             return BadRequest("Organiser account is missing.");
@@ -85,7 +90,7 @@ public class EventsController : ControllerBase
 
         var ev = new Event
         {
-            OrganiserId = organiserId,
+            OrganiserId = organiserId.Value,
             Title = dto.Title,
             Description = dto.Description,
             Date = dto.Date,
@@ -111,7 +116,7 @@ public class EventsController : ControllerBase
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -159,9 +164,14 @@ public class EventsController : ControllerBase
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if (_db.Categories.Any(category => category.EventId == eventId))
+        {
+            return Conflict("Events with categories cannot be deleted.");
         }
 
         _db.Events.Remove(ev);

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using RaceDay.Api.Data;
 using RaceDay.Api.Dtos;
 using RaceDay.Api.Models;
@@ -20,14 +21,8 @@ public class RegistrationsController : ControllerBase
 
     [HttpPost("~/api/events/{eventId:int}/registrations")]
     [RequireRole(Roles.Participant)]
-    public IActionResult Enrol(int eventId, EnrolDto dto)
+    public async Task<IActionResult> Enrol(int eventId, EnrolDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var ev = _db.Events.Find(eventId);
         var category = _db.Categories.Find(dto.CategoryId);
         if (ev is null || category is null || category.EventId != eventId)
@@ -35,13 +30,41 @@ public class RegistrationsController : ControllerBase
             return NotFound();
         }
 
-        var participantId = SessionAuth.GetUserId(HttpContext)!.Value;
-        if (_db.Registrations.Any(r => r.ParticipantId == participantId && r.CategoryId == dto.CategoryId))
+        if (ev.Status != "Published" || ev.Date < DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            return Conflict("Registration is only available for future published events.");
+        }
+
+        var participantId = CurrentUser.GetUserId(HttpContext);
+        if (participantId is null)
+        {
+            return Unauthorized();
+        }
+
+        if (category.CategoryType == "Age")
+        {
+            var idNumber = _db.Users.Where(u => u.Id == participantId).Select(u => u.IdNumberOrPassport).FirstOrDefault();
+            var age = AgeCalculator.Calculate(idNumber, ev.Date);
+            if (age is null)
+            {
+                return BadRequest("An age category requires an identity number containing a valid date of birth.");
+            }
+
+            if (age < category.MinAge || age > category.MaxAge)
+            {
+                return BadRequest("Participant does not meet this category's age requirements.");
+            }
+        }
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        if (await _db.Registrations.AnyAsync(r =>
+                r.ParticipantId == participantId && r.CategoryId == dto.CategoryId && r.Status == "Active"))
         {
             return Conflict("Already registered for this category.");
         }
 
-        var activeCount = _db.Registrations.Count(r => r.CategoryId == dto.CategoryId && r.Status == "Active");
+        var activeCount = await _db.Registrations.CountAsync(r =>
+            r.CategoryId == dto.CategoryId && r.Status == "Active");
         if (activeCount >= category.MaxSlots)
         {
             return Conflict("Category is full.");
@@ -49,7 +72,7 @@ public class RegistrationsController : ControllerBase
 
         var registration = new Registration
         {
-            ParticipantId = participantId,
+            ParticipantId = participantId.Value,
             CategoryId = dto.CategoryId,
             RegistrationDate = DateTime.UtcNow,
             PaymentStatus = "Pending",
@@ -60,41 +83,49 @@ public class RegistrationsController : ControllerBase
             Status = "Active"
         };
         _db.Registrations.Add(registration);
-        _db.SaveChanges();
-        return Created($"/api/registrations/{registration.Id}", registration);
+        await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return Created($"/api/registrations/{registration.Id}", ResponseMapper.ToResponse(registration, includeMedicalAid: true));
     }
 
     [HttpGet("me")]
     [RequireRole(Roles.Participant)]
     public IActionResult GetMine()
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant);
-        if (denied is not null)
+        var userId = CurrentUser.GetUserId(HttpContext);
+        if (userId is null)
         {
-            return denied;
+            return Unauthorized();
         }
 
-        var userId = SessionAuth.GetUserId(HttpContext)!.Value;
-        return Ok(_db.Registrations.Where(r => r.ParticipantId == userId).ToList());
+        return Ok(_db.Registrations.Where(r => r.ParticipantId == userId)
+            .Select(r => new RegistrationResponseDto
+            {
+                Id = r.Id,
+                CategoryId = r.CategoryId,
+                ParticipantId = r.ParticipantId,
+                RegistrationDate = r.RegistrationDate,
+                PaymentStatus = r.PaymentStatus,
+                AmountPaid = r.AmountPaid,
+                AssignedBibNumber = r.AssignedBibNumber,
+                RequiresTempAsaLicense = r.RequiresTempAsaLicense,
+                MedicalAidName = r.MedicalAidName,
+                MedicalAidNumber = r.MedicalAidNumber,
+                Status = r.Status
+            }).ToList());
     }
 
     [HttpGet("~/api/events/{eventId:int}/registrations")]
     [RequireRole(Roles.Organiser)]
     public IActionResult GetForEvent(int eventId)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var ev = _db.Events.Find(eventId);
         if (ev is null)
         {
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -102,6 +133,8 @@ public class RegistrationsController : ControllerBase
         var registrations = _db.Registrations
             .Include(r => r.Category)
             .Where(r => r.Category!.EventId == eventId)
+            .AsEnumerable()
+            .Select(r => ResponseMapper.ToResponse(r))
             .ToList();
         return Ok(registrations);
     }
@@ -110,12 +143,6 @@ public class RegistrationsController : ControllerBase
     [RequireRole(Roles.Participant, Roles.Organiser)]
     public IActionResult GetRegistration(int registrationId)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var registration = _db.Registrations.Include(r => r.Category).FirstOrDefault(r => r.Id == registrationId);
         if (registration is null)
         {
@@ -127,19 +154,14 @@ public class RegistrationsController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        return Ok(registration);
+        return Ok(ResponseMapper.ToResponse(registration,
+            includeMedicalAid: CurrentUser.GetRole(HttpContext) == Roles.Participant));
     }
 
     [HttpPut("{registrationId:int}")]
     [RequireRole(Roles.Participant, Roles.Organiser)]
     public IActionResult UpdateRegistration(int registrationId, UpdateRegistrationDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var registration = _db.Registrations.Include(r => r.Category).FirstOrDefault(r => r.Id == registrationId);
         if (registration is null)
         {
@@ -151,7 +173,7 @@ public class RegistrationsController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        var role = SessionAuth.GetRole(HttpContext);
+        var role = CurrentUser.GetRole(HttpContext);
         if (role == Roles.Participant)
         {
             registration.MedicalAidName = dto.MedicalAidName ?? registration.MedicalAidName;
@@ -182,19 +204,14 @@ public class RegistrationsController : ControllerBase
         }
 
         _db.SaveChanges();
-        return Ok(registration);
+        return Ok(ResponseMapper.ToResponse(registration,
+            includeMedicalAid: CurrentUser.GetRole(HttpContext) == Roles.Participant));
     }
 
     [HttpDelete("{registrationId:int}")]
     [RequireRole(Roles.Participant, Roles.Organiser)]
     public IActionResult CancelRegistration(int registrationId)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Participant, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var registration = _db.Registrations.Include(r => r.Category).FirstOrDefault(r => r.Id == registrationId);
         if (registration is null)
         {
@@ -206,6 +223,11 @@ public class RegistrationsController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden);
         }
 
+        if (_db.Results.Any(result => result.RegistrationId == registrationId))
+        {
+            return Conflict("A registration with a recorded result cannot be cancelled.");
+        }
+
         registration.Status = "Cancelled";
         _db.SaveChanges();
         return NoContent();
@@ -213,8 +235,8 @@ public class RegistrationsController : ControllerBase
 
     private bool CanAccess(Registration registration)
     {
-        var userId = SessionAuth.GetUserId(HttpContext)!.Value;
-        var role = SessionAuth.GetRole(HttpContext);
+        var userId = CurrentUser.GetUserId(HttpContext)!.Value;
+        var role = CurrentUser.GetRole(HttpContext);
         if (role == Roles.Participant)
         {
             return registration.ParticipantId == userId;

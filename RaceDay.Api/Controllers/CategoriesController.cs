@@ -20,43 +20,51 @@ public class CategoriesController : ControllerBase
     [HttpGet("~/api/events/{eventId:int}/categories")]
     public IActionResult GetForEvent(int eventId)
     {
-        if (!_db.Events.Any(e => e.Id == eventId))
+        if (!_db.Events.Any(e => e.Id == eventId && e.Status == "Published"))
         {
             return NotFound();
         }
 
-        return Ok(_db.Categories.Where(c => c.EventId == eventId).ToList());
+        return Ok(_db.Categories.Where(c => c.EventId == eventId)
+            .Select(category => new CategoryResponseDto
+            {
+                Id = category.Id,
+                EventId = category.EventId,
+                DisciplineId = category.DisciplineId,
+                Name = category.Name,
+                CategoryType = category.CategoryType,
+                DistanceKm = category.DistanceKm,
+                MinAge = category.MinAge,
+                MaxAge = category.MaxAge,
+                EntryFeeZar = category.EntryFeeZar,
+                MaxSlots = category.MaxSlots,
+                StartTime = category.StartTime
+            }).ToList());
     }
 
     [HttpGet("{categoryId:int}")]
     public IActionResult GetCategory(int categoryId)
     {
-        var category = _db.Categories.Find(categoryId);
+        var category = _db.Categories.FirstOrDefault(c => c.Id == categoryId && c.Event!.Status == "Published");
         if (category is null)
         {
             return NotFound();
         }
 
-        return Ok(category);
+        return Ok(ResponseMapper.ToResponse(category));
     }
 
     [HttpPost("~/api/events/{eventId:int}/categories")]
     [RequireRole(Roles.Organiser)]
     public IActionResult CreateCategory(int eventId, CreateCategoryDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var ev = _db.Events.Find(eventId);
         if (ev is null)
         {
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -92,19 +100,13 @@ public class CategoriesController : ControllerBase
         };
         _db.Categories.Add(category);
         _db.SaveChanges();
-        return Created($"/api/categories/{category.Id}", category);
+        return Created($"/api/categories/{category.Id}", ResponseMapper.ToResponse(category));
     }
 
     [HttpPut("{categoryId:int}")]
     [RequireRole(Roles.Organiser)]
     public IActionResult UpdateCategory(int categoryId, UpdateCategoryDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var category = _db.Categories.Find(categoryId);
         if (category is null)
         {
@@ -117,7 +119,7 @@ public class CategoriesController : ControllerBase
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -141,19 +143,13 @@ public class CategoriesController : ControllerBase
         category.MaxSlots = dto.MaxSlots ?? category.MaxSlots;
         category.StartTime = dto.StartTime ?? category.StartTime;
         _db.SaveChanges();
-        return Ok(category);
+        return Ok(ResponseMapper.ToResponse(category));
     }
 
     [HttpDelete("{categoryId:int}")]
     [RequireRole(Roles.Organiser)]
     public IActionResult DeleteCategory(int categoryId)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         var category = _db.Categories.Find(categoryId);
         if (category is null)
         {
@@ -166,9 +162,14 @@ public class CategoriesController : ControllerBase
             return NotFound();
         }
 
-        if (ev.OrganiserId != SessionAuth.GetUserId(HttpContext))
+        if (ev.OrganiserId != CurrentUser.GetUserId(HttpContext))
         {
             return StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        if (_db.Registrations.Any(registration => registration.CategoryId == categoryId))
+        {
+            return Conflict("Categories with registrations cannot be deleted.");
         }
 
         _db.Categories.Remove(category);

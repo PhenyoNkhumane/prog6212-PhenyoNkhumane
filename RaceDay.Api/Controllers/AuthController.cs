@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using RaceDay.Api.Data;
 using RaceDay.Api.Dtos;
@@ -81,6 +83,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login(LoginDto dto)
     {
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
@@ -109,10 +112,10 @@ public class AuthController : ControllerBase
     }
 
     [HttpPut("password")]
-    [RequireRole]
+    [Authorize]
     public async Task<IActionResult> ChangePassword(ChangePasswordDto dto)
     {
-        var userId = SessionAuth.GetUserId(HttpContext);
+        var userId = CurrentUser.GetUserId(HttpContext);
         if (userId is null)
         {
             return Unauthorized();

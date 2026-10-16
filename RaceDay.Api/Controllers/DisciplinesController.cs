@@ -20,19 +20,18 @@ public class DisciplinesController : ControllerBase
     [HttpGet]
     public IActionResult GetDisciplines()
     {
-        return Ok(_db.Disciplines.ToList());
+        return Ok(_db.Disciplines.Select(discipline => new DisciplineResponseDto
+        {
+            Id = discipline.Id,
+            Name = discipline.Name,
+            Description = discipline.Description
+        }).ToList());
     }
 
     [HttpPost]
     [RequireRole(Roles.Organiser)]
     public IActionResult CreateDiscipline(CreateDisciplineDto dto)
     {
-        var denied = SessionAuth.ForbidIfUnauthorized(HttpContext, Roles.Organiser);
-        if (denied is not null)
-        {
-            return denied;
-        }
-
         if (_db.Disciplines.Any(d => d.Name == dto.Name))
         {
             return Conflict("A discipline with this name already exists.");
@@ -45,6 +44,6 @@ public class DisciplinesController : ControllerBase
         };
         _db.Disciplines.Add(discipline);
         _db.SaveChanges();
-        return Created($"/api/disciplines/{discipline.Id}", discipline);
+        return Created($"/api/disciplines/{discipline.Id}", ResponseMapper.ToResponse(discipline));
     }
 }
