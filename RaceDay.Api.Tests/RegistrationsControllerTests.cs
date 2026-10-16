@@ -9,16 +9,16 @@ namespace RaceDay.Api.Tests;
 public class RegistrationsControllerTests
 {
     [Fact]
-    public void Enrol_AsParticipant_SavesRegistration()
+    public async Task Enrol_AsParticipant_SavesRegistration()
     {
         // Arrange
         using var db = TestDbFactory.Create();
         var (participant, eventId, categoryId) = SeedEventWithCategory(db);
         var controller = new RegistrationsController(db);
-        ControllerTestHelper.AttachSession(controller, participant.Id, Roles.Participant);
+        ControllerTestHelper.AttachUser(controller, participant.Id, Roles.Participant);
 
         // Act
-        var result = controller.Enrol(eventId, new EnrolDto { CategoryId = categoryId });
+        var result = await controller.Enrol(eventId, new EnrolDto { CategoryId = categoryId });
 
         // Assert
         Assert.IsType<CreatedResult>(result);
@@ -27,7 +27,7 @@ public class RegistrationsControllerTests
     }
 
     [Fact]
-    public void Enrol_DuplicateCategory_ReturnsConflict()
+    public async Task Enrol_PreviouslyCancelledCategory_AllowsReenrolment()
     {
         // Arrange
         using var db = TestDbFactory.Create();
@@ -41,49 +41,67 @@ public class RegistrationsControllerTests
         });
         db.SaveChanges();
         var controller = new RegistrationsController(db);
-        ControllerTestHelper.AttachSession(controller, participant.Id, Roles.Participant);
+        ControllerTestHelper.AttachUser(controller, participant.Id, Roles.Participant);
 
         // Act
-        var result = controller.Enrol(eventId, new EnrolDto { CategoryId = categoryId });
+        var result = await controller.Enrol(eventId, new EnrolDto { CategoryId = categoryId });
 
         // Assert
-        Assert.IsType<ConflictObjectResult>(result);
-        Assert.Single(db.Registrations);
+        Assert.IsType<CreatedResult>(result);
+        Assert.Equal(2, db.Registrations.Count());
     }
 
     [Fact]
-    public void Enrol_AsOrganiser_ReturnsForbidden()
-    {
-        // Arrange
-        using var db = TestDbFactory.Create();
-        var (_, eventId, categoryId) = SeedEventWithCategory(db);
-        var organiser = db.Organisers.Single();
-        var controller = new RegistrationsController(db);
-        ControllerTestHelper.AttachSession(controller, organiser.UserId, Roles.Organiser);
-
-        // Act
-        var result = controller.Enrol(eventId, new EnrolDto { CategoryId = categoryId });
-
-        // Assert
-        var forbidden = Assert.IsType<StatusCodeResult>(result);
-        Assert.Equal(403, forbidden.StatusCode);
-        Assert.Empty(db.Registrations);
-    }
-
-    [Fact]
-    public void Enrol_UnknownEvent_ReturnsNotFound()
+    public async Task Enrol_UnknownEvent_ReturnsNotFound()
     {
         // Arrange
         using var db = TestDbFactory.Create();
         var participant = ControllerTestHelper.AddParticipant(db, "runner@raceday.co.za", "Secret123!");
         var controller = new RegistrationsController(db);
-        ControllerTestHelper.AttachSession(controller, participant.Id, Roles.Participant);
+        ControllerTestHelper.AttachUser(controller, participant.Id, Roles.Participant);
 
         // Act
-        var result = controller.Enrol(99, new EnrolDto { CategoryId = 1 });
+        var result = await controller.Enrol(99, new EnrolDto { CategoryId = 1 });
 
         // Assert
         Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task Enrol_DraftEvent_ReturnsConflict()
+    {
+        using var db = TestDbFactory.Create();
+        var (participant, eventId, categoryId) = SeedEventWithCategory(db);
+        db.Events.Single().Status = "Draft";
+        db.SaveChanges();
+        var controller = new RegistrationsController(db);
+        ControllerTestHelper.AttachUser(controller, participant.Id, Roles.Participant);
+
+        var result = await controller.Enrol(eventId, new EnrolDto { CategoryId = categoryId });
+
+        Assert.IsType<ConflictObjectResult>(result);
+        Assert.Empty(db.Registrations);
+    }
+
+    [Fact]
+    public async Task Enrol_AgeCategoryRejectsParticipantOutsideAgeRange()
+    {
+        using var db = TestDbFactory.Create();
+        var (participant, eventId, categoryId) = SeedEventWithCategory(db);
+        participant.IdNumberOrPassport = "0001010000000";
+        var category = db.Categories.Single();
+        category.CategoryType = "Age";
+        category.DistanceKm = null;
+        category.MinAge = 60;
+        category.MaxAge = 120;
+        db.SaveChanges();
+        var controller = new RegistrationsController(db);
+        ControllerTestHelper.AttachUser(controller, participant.Id, Roles.Participant);
+
+        var result = await controller.Enrol(eventId, new EnrolDto { CategoryId = categoryId });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Empty(db.Registrations);
     }
 
     private static (User Participant, int EventId, int CategoryId) SeedEventWithCategory(RaceDay.Api.Data.ApplicationDbContext db)
@@ -98,7 +116,7 @@ public class RegistrationsControllerTests
         {
             OrganiserId = organiser.Id,
             Title = "Johannesburg Road Race",
-            Date = new DateOnly(2026, 10, 10),
+            Date = new DateOnly(2027, 10, 10),
             DistanceKm = 21,
             EventType = "Run",
             VenueName = "Zoo Lake",

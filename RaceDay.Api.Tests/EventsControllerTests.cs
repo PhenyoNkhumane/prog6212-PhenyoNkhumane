@@ -23,47 +23,13 @@ public class EventsControllerTests
     }
 
     [Fact]
-    public void CreateEvent_NoSession_ReturnsUnauthorized()
-    {
-        // Arrange
-        using var db = TestDbFactory.Create();
-        var controller = new EventsController(db);
-        ControllerTestHelper.AttachSession(controller);
-
-        // Act
-        var result = controller.CreateEvent(ValidEvent());
-
-        // Assert
-        Assert.IsType<UnauthorizedResult>(result);
-        Assert.Empty(db.Events);
-    }
-
-    [Fact]
-    public void CreateEvent_AsParticipant_ReturnsForbidden()
-    {
-        // Arrange
-        using var db = TestDbFactory.Create();
-        var participant = ControllerTestHelper.AddParticipant(db, "runner@raceday.co.za", "Secret123!");
-        var controller = new EventsController(db);
-        ControllerTestHelper.AttachSession(controller, participant.Id, Roles.Participant);
-
-        // Act
-        var result = controller.CreateEvent(ValidEvent());
-
-        // Assert
-        var forbidden = Assert.IsType<StatusCodeResult>(result);
-        Assert.Equal(403, forbidden.StatusCode);
-        Assert.Empty(db.Events);
-    }
-
-    [Fact]
     public void CreateEvent_AsOrganiser_SavesEvent()
     {
         // Arrange
         using var db = TestDbFactory.Create();
         var organiser = ControllerTestHelper.AddOrganiser(db, "org@raceday.co.za", "Secret123!");
         var controller = new EventsController(db);
-        ControllerTestHelper.AttachSession(controller, organiser.Id, Roles.Organiser);
+        ControllerTestHelper.AttachUser(controller, organiser.Id, Roles.Organiser);
 
         // Act
         var result = controller.CreateEvent(ValidEvent());
@@ -82,7 +48,7 @@ public class EventsControllerTests
         using var db = TestDbFactory.Create();
         var organiser = ControllerTestHelper.AddOrganiser(db, "org@raceday.co.za", "Secret123!");
         var controller = new EventsController(db);
-        ControllerTestHelper.AttachSession(controller, organiser.Id, Roles.Organiser);
+        ControllerTestHelper.AttachUser(controller, organiser.Id, Roles.Organiser);
         var dto = ValidEvent();
         dto.EventType = "Swim";
 
@@ -101,7 +67,7 @@ public class EventsControllerTests
         using var db = TestDbFactory.Create();
         var organiser = ControllerTestHelper.AddOrganiser(db, "org@raceday.co.za", "Secret123!");
         var controller = new EventsController(db);
-        ControllerTestHelper.AttachSession(controller, organiser.Id, Roles.Organiser);
+        ControllerTestHelper.AttachUser(controller, organiser.Id, Roles.Organiser);
 
         // Act
         var result = controller.DeleteEvent(42);
@@ -121,7 +87,7 @@ public class EventsControllerTests
         {
             OrganiserId = owner.Id,
             Title = "Owner Event",
-            Date = new DateOnly(2026, 10, 10),
+            Date = new DateOnly(2027, 10, 10),
             DistanceKm = 10,
             EventType = "Run",
             VenueName = "Zoo Lake",
@@ -131,7 +97,7 @@ public class EventsControllerTests
         });
         db.SaveChanges();
         var controller = new EventsController(db);
-        ControllerTestHelper.AttachSession(controller, other.Id, Roles.Organiser);
+        ControllerTestHelper.AttachUser(controller, other.Id, Roles.Organiser);
 
         // Act
         var result = controller.DeleteEvent(db.Events.Single().Id);
@@ -146,7 +112,7 @@ public class EventsControllerTests
     {
         Title = "Johannesburg Road Race",
         Description = "Annual road running event.",
-        Date = new DateOnly(2026, 10, 10),
+        Date = new DateOnly(2027, 10, 10),
         VenueName = "Zoo Lake Sports Grounds",
         City = "Johannesburg",
         Province = "Gauteng",

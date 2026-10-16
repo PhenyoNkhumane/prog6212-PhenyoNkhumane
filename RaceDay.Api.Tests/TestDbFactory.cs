@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
+using RaceDay.Api.Services;
 using RaceDay.Api.Data;
 
 namespace RaceDay.Api.Tests;
@@ -14,7 +15,9 @@ public static class TestDbFactory
             .UseSqlite(connection, contextOwnsConnection: true)
             .Options;
 
-        var db = new ApplicationDbContext(options);
+        var protector = new IdentityNumberProtector(Convert.FromBase64String(
+            "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="));
+        var db = new ApplicationDbContext(options, protector);
         db.Database.EnsureCreated();
         return db;
     }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using RaceDay.Api.Data;
 using RaceDay.Api.Models;
 using RaceDay.Api.Services;
@@ -9,18 +10,21 @@ namespace RaceDay.Api.Tests;
 
 public static class ControllerTestHelper
 {
-    public static void AttachSession(ControllerBase controller, int? userId = null, string? role = null)
+    public static void AttachUser(ControllerBase controller, int? userId = null, string? role = null)
     {
-        var session = new TestSession();
+        var context = new DefaultHttpContext();
         if (userId is not null)
         {
-            session.SetInt32(SessionKeys.UserId, userId.Value);
-            session.SetString(SessionKeys.Role, role ?? string.Empty);
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId.Value.ToString()),
+                new Claim(ClaimTypes.Role, role ?? string.Empty)
+            ], "Test"));
         }
 
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext { Session = session }
+            HttpContext = context
         };
     }
 
@@ -34,7 +38,7 @@ public static class ControllerTestHelper
             FirstName = "Test",
             LastName = "Participant",
             Role = Roles.Participant,
-            IdNumberOrPassport = "9001015009089"
+            IdNumberOrPassport = "TEST-PARTICIPANT-ID"
         };
         user.PasswordHash = hasher.HashPassword(user, password);
         db.Users.Add(user);
@@ -54,7 +58,7 @@ public static class ControllerTestHelper
             FirstName = "Test",
             LastName = "Organiser",
             Role = Roles.Organiser,
-            IdNumberOrPassport = "8001015009087"
+            IdNumberOrPassport = "TEST-ORGANISER-ID"
         };
         user.PasswordHash = hasher.HashPassword(user, password);
         db.Users.Add(user);
