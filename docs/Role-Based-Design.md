@@ -4,15 +4,15 @@
 
 RaceDay has two account roles: `Participant` and `Organiser`. Each account has exactly one role. `User` stores shared identity and login data, while the matching `Participant` or `Organiser` subtype row represents the account's role in the data model.
 
-Public self-registration creates a `Participant` account only. The request cannot choose a role. An authorised administrator provisions an `Organiser` account through the controlled account-provisioning process and supplies a one-time credential or invitation. The organiser must set a new password at first login. Organisers cannot promote themselves or convert a participant account.
+Public self-registration allows the caller to choose either permitted role. The API validates the role against the fixed allow-list and atomically creates the `User` and matching subtype. The role cannot be changed through profile updates. Registration uses a signed JWT; the client sends it as a bearer token on protected requests.
 
-The administrator who provisions accounts is an administrative operator, not a third RaceDay account role. The two permitted application roles remain Participant and Organiser. Provisioning must be limited to authorised staff and must not expose temporary passwords in logs or public responses.
+Passwords must be at least 12 characters and include upper-case, lower-case, numeric, and non-alphanumeric characters. Login attempts are rate-limited. A JWT for an account marked `MustChangePassword` can only call the password-change or logout endpoint.
 
 ## Permissions
 
 | Capability | Participant | Organiser |
 |---|---|---|
-| Register an account | Yes, self-registration | No, provisioned by authorised staff |
+| Register an account | Yes, self-registration | Yes, self-registration |
 | View public events, categories, clubs and results | Yes | Yes |
 | Enter a category and manage own registration | Yes | No |
 | View own registrations, club memberships and results | Yes | No |
@@ -21,8 +21,8 @@ The administrator who provisions accounts is an administrative operator, not a t
 | Add disciplines or clubs | No | Yes |
 | Manage another organiser's event | No | No |
 
-Every protected request must authenticate the account and check both its role and, for event operations, ownership of the relevant event. Knowing an identifier does not grant access to another user's records.
+Every protected request must validate the JWT and check its role and, for event operations, ownership of the relevant event. Knowing an identifier does not grant access to another user's records. Password changes do not mutate an issued token; the user signs in again to receive an updated token.
 
 ## Database enforcement
 
-`Event.organiser_id` references `Organiser.user_id`. `Registration.participant_id` and `ClubMembership.participant_id` reference `Participant.user_id`. These foreign keys prevent an account without the appropriate subtype from acting in that capacity. Subtype triggers validate that the subtype matches the role and reject a user appearing in both subtype tables. The API must also create the `User` row and its matching subtype in one transaction.
+`Event.organiser_id` references `Organiser.user_id`. `Registration.participant_id` and `ClubMembership.participant_id` reference `Participant.user_id`. These foreign keys prevent an account without the appropriate subtype from acting in that capacity. Subtype triggers validate that the subtype matches the role and reject a user appearing in both subtype tables. SQL also guards role changes against an existing subtype mismatch.

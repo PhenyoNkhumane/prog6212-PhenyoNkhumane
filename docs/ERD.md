@@ -1,6 +1,6 @@
 # RaceDay Entity Relationship Diagram
 
-`User` stores shared login and identity details. Every account has one role and one matching subtype row. Public registration creates Participants only; Organisers are provisioned by an authorised administrator. Events reference Organiser, and Registrations and ClubMemberships reference Participant.
+`User` stores shared login and identity details. Every account has one role and one matching subtype row. Public registration may create either a Participant or an Organiser, along with its matching subtype. Events reference Organiser, and Registrations and ClubMemberships reference Participant.
 
 ```mermaid
 erDiagram
@@ -23,7 +23,7 @@ erDiagram
         string first_name
         string last_name
         string role
-        string id_number_or_passport
+        encrypted string id_number_or_passport
         string asa_permanent_license_number
         boolean must_change_password
         datetime created_at
@@ -96,10 +96,6 @@ erDiagram
         int overall_position
         int category_position
         string status
-    }
-    CLUB {
-        int id PK
-        string name UK
     }
     CLUB_MEMBERSHIP {
         int id PK

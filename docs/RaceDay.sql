@@ -1,6 +1,12 @@
 CREATE DATABASE RaceDay;
 
 GO
+CREATE INDEX IX_Event_Organiser ON Event (organiser_id);
+CREATE INDEX IX_Category_Event ON Category (event_id);
+CREATE INDEX IX_Category_Discipline ON Category (discipline_id);
+CREATE INDEX IX_ClubMembership_Club ON ClubMembership (club_id);
+CREATE INDEX IX_ClubMembership_Discipline ON ClubMembership (discipline_id);
+GO
 USE RaceDay;
 
 GO
@@ -24,10 +30,10 @@ CREATE TABLE [User] (
   first_name VARCHAR(100) NOT NULL,
   last_name VARCHAR(100) NOT NULL,
   ROLE VARCHAR(20) NOT NULL,
-  id_number_or_passport VARCHAR(50),
+  id_number_or_passport VARCHAR(512),
   asa_permanent_license_number VARCHAR(50),
   must_change_password BIT NOT NULL DEFAULT 0,
-  created_at DATETIME2 NOT NULL DEFAULT GETDATE(),
+  created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT CK_User_Role CHECK (
     ROLE IN ('Organiser', 'Participant')
   )
@@ -45,7 +51,7 @@ GO
 CREATE TABLE Organiser (
   user_id INT PRIMARY KEY,
   provisioned_by VARCHAR(255) NOT NULL,
-  provisioned_at DATETIME2 NOT NULL DEFAULT GETDATE(),
+  provisioned_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT FK_Organiser_User FOREIGN KEY (user_id) REFERENCES [User] (id)
 );
 GO
@@ -69,6 +75,17 @@ BEGIN
     THROW 51004, 'A user cannot be both Participant and Organiser.', 1;
 END;
 GO
+CREATE TRIGGER TR_User_RoleMatchesSubtype ON [User]
+AFTER UPDATE AS
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM inserted i
+    WHERE (EXISTS (SELECT 1 FROM Participant p WHERE p.user_id = i.id) AND i.ROLE <> 'Participant')
+       OR (EXISTS (SELECT 1 FROM Organiser o WHERE o.user_id = i.id) AND i.ROLE <> 'Organiser')
+  )
+    THROW 51005, 'User role must match its account subtype.', 1;
+END;
+GO
 -- =============================================
 -- TABLE: Club
 -- =============================================
@@ -78,7 +95,7 @@ CREATE TABLE Club (
   registration_number VARCHAR(100) UNIQUE,
   contact_email VARCHAR(255),
   contact_number VARCHAR(30),
-  created_at DATETIME2 NOT NULL DEFAULT GETDATE()
+  created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
 GO
@@ -138,7 +155,7 @@ CREATE TABLE Registration (
   id INT IDENTITY(1, 1) PRIMARY KEY,
   participant_id INT NOT NULL,
   category_id INT NOT NULL,
-  registration_date DATETIME2 NOT NULL DEFAULT GETDATE(),
+  registration_date DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
   payment_status VARCHAR(20) NOT NULL,
   amount_paid DECIMAL(10, 2) NOT NULL,
   assigned_bib_number VARCHAR(20),
@@ -150,9 +167,13 @@ CREATE TABLE Registration (
   CONSTRAINT FK_Registration_Category FOREIGN KEY (category_id) REFERENCES Category (id),
   CONSTRAINT CK_Registration_PaymentStatus CHECK (payment_status IN ('Pending', 'Paid', 'Refunded')),
   CONSTRAINT CK_Registration_AmountPaid CHECK (amount_paid >= 0),
-  CONSTRAINT CK_Registration_Status CHECK (status IN ('Active', 'Cancelled')),
-  CONSTRAINT UQ_Registration_Participant_Category UNIQUE (participant_id, category_id)
+  CONSTRAINT CK_Registration_Status CHECK (status IN ('Active', 'Cancelled'))
 );
+CREATE UNIQUE INDEX UX_Registration_Active_Participant_Category
+  ON Registration (participant_id, category_id)
+  WHERE status = 'Active';
+CREATE INDEX IX_Registration_Category ON Registration (category_id);
+CREATE INDEX IX_Registration_Participant ON Registration (participant_id);
 
 GO
 -- =============================================
@@ -164,7 +185,7 @@ CREATE TABLE ClubMembership (
   club_id INT NOT NULL,
   discipline_id INT NOT NULL,
   membership_number VARCHAR(100),
-  joined_at DATE NOT NULL DEFAULT GETDATE(),
+  joined_at DATE NOT NULL DEFAULT CONVERT(DATE, SYSUTCDATETIME()),
   status VARCHAR(20) NOT NULL DEFAULT 'Active',
   CONSTRAINT FK_ClubMembership_Participant FOREIGN KEY (participant_id) REFERENCES Participant (user_id),
   CONSTRAINT FK_ClubMembership_Club FOREIGN KEY (club_id) REFERENCES Club (id),
@@ -222,29 +243,31 @@ INSERT INTO [User]
     (email, password_hash, first_name, last_name, role,
      id_number_or_passport, asa_permanent_license_number)
 VALUES
-('organiser1@raceday.co.za', 'HASH_ORGANISER_001',
- 'Thabo', 'Mokoena', 'Organiser',
- '8001015009087', NULL),
+('organiser1@example.test', 'AQAAAAIAAYagAAAAEJDB04h6MBZAsPwLb8OKoq20gEB8GFY2KE0j+I5bLnTDqp13U3W3ln7KJEzNpsYmYg==',
+ 'Alex', 'Example', 'Organiser',
+ NULL, NULL),
 
-('organiser2@raceday.co.za', 'HASH_ORGANISER_002',
- 'Lerato', 'Molefe', 'Organiser',
- '8205056007088', NULL);
+('organiser2@example.test', 'AQAAAAIAAYagAAAAEJDB04h6MBZAsPwLb8OKoq20gEB8GFY2KE0j+I5bLnTDqp13U3W3ln7KJEzNpsYmYg==',
+ 'Sam', 'Sample', 'Organiser',
+ NULL, NULL);
 INSERT INTO Organiser (user_id, provisioned_by)
-VALUES (1, 'RaceDay administrator'), (2, 'RaceDay administrator');
+SELECT id, 'Demo seed' FROM [User]
+WHERE email IN ('organiser1@example.test', 'organiser2@example.test');
 
 -- 2 Participants
 INSERT INTO [User]
     (email, password_hash, first_name, last_name, role,
      id_number_or_passport, asa_permanent_license_number)
 VALUES
-('participant1@raceday.co.za', 'HASH_PARTICIPANT_001',
- 'Phenyo', 'Nkhumane', 'Participant',
- '9001015009089', 'ASA123456'),
+('participant1@example.test', 'AQAAAAIAAYagAAAAEJDB04h6MBZAsPwLb8OKoq20gEB8GFY2KE0j+I5bLnTDqp13U3W3ln7KJEzNpsYmYg==',
+ 'Taylor', 'Runner', 'Participant',
+ NULL, 'DEMO-ASA-001'),
 
-('participant2@raceday.co.za', 'HASH_PARTICIPANT_002',
- 'Naledi', 'Mokoena', 'Participant',
- '9202026007090', 'ASA654321');
-INSERT INTO Participant (user_id) VALUES (3), (4);
+('participant2@example.test', 'AQAAAAIAAYagAAAAEJDB04h6MBZAsPwLb8OKoq20gEB8GFY2KE0j+I5bLnTDqp13U3W3ln7KJEzNpsYmYg==',
+ 'Jordan', 'Racer', 'Participant',
+ NULL, 'DEMO-ASA-002');
+INSERT INTO Participant (user_id)
+SELECT id FROM [User] WHERE email IN ('participant1@example.test', 'participant2@example.test');
 GO
 
 -- CLUBS
@@ -259,11 +282,16 @@ VALUES
 GO
 
 -- EVENTS
+DECLARE @organiser1_id INT = (SELECT id FROM [User] WHERE email = 'organiser1@example.test');
+DECLARE @organiser2_id INT = (SELECT id FROM [User] WHERE email = 'organiser2@example.test');
+DECLARE @participant1_id INT = (SELECT id FROM [User] WHERE email = 'participant1@example.test');
+DECLARE @participant2_id INT = (SELECT id FROM [User] WHERE email = 'participant2@example.test');
+
 INSERT INTO Event
     (organiser_id, title, description, date, distance_km, event_type,
      venue_name, city, province, status)
 VALUES
-(1,
+(@organiser1_id,
  'Johannesburg Road Race',
  'Annual road running event.',
  '2026-10-10',
@@ -273,7 +301,7 @@ VALUES
  'Gauteng',
  'Published'),
 
-(1,
+(@organiser1_id,
  'Soweto Community Run',
  'Community-focused running event.',
  '2026-11-15',
@@ -283,7 +311,7 @@ VALUES
  'Gauteng',
  'Published'),
 
-(2,
+(@organiser2_id,
  'Gauteng Cycling Challenge',
  'Competitive road cycling event.',
  '2026-12-05',
@@ -317,9 +345,9 @@ INSERT INTO ClubMembership
     (participant_id, club_id, discipline_id,
      membership_number, joined_at, status)
 VALUES
-(3, 1, 1, 'JRC-001', '2026-01-15', 'Active'),
-(4, 1, 1, 'JRC-002', '2026-02-01', 'Active'),
-(3, 2, 3, 'GCC-001', '2026-03-10', 'Active');
+(@participant1_id, 1, 1, 'DEMO-JRC-001', '2026-01-15', 'Active'),
+(@participant2_id, 1, 1, 'DEMO-JRC-002', '2026-02-01', 'Active'),
+(@participant1_id, 2, 3, 'DEMO-GCC-001', '2026-03-10', 'Active');
 GO
 
 -- REGISTRATIONS
@@ -329,13 +357,13 @@ INSERT INTO Registration
      requires_temp_asa_license, medical_aid_name,
      medical_aid_number)
 VALUES
-(3, 1, '2026-08-20', 'Paid', 150.00, 'JR001',
+( @participant1_id, 4, '2026-08-20', 'Paid', 250.00, 'DEMO-JR001',
  0, 'Discovery Health', 'DH100001'),
 
-(4, 2, '2026-08-21', 'Paid', 250.00, 'JR002',
+( @participant2_id, 3, '2026-08-21', 'Paid', 150.00, 'DEMO-JR002',
  0, 'Bonitas', 'BO100002'),
 
-(3, 4, '2026-08-25', 'Pending', 80.00, NULL,
+( @participant1_id, 6, '2026-08-25', 'Pending', 80.00, NULL,
  1, 'Discovery Health', 'DH100001');
 GO
 
