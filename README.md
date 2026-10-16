@@ -1,5 +1,11 @@
 # RaceDay
+## User roles
 
+### Organiser
+An Organiser manages sporting events and their related categories, oversees event administration, and manages event results. Organisers have access to protected operations according to their assigned role and permissions.
+
+### Participant
+A Participant registers for sporting events, manages their own registrations, and accesses relevant event and result information. Participants can view published event information and use protected operations permitted by their assigned role.
 [![Build and tests](https://github.com/PhenyoNkhumane/prog6212-PhenyoNkhumane/actions/workflows/dotNET.yml/badge.svg)](https://github.com/PhenyoNkhumane/prog6212-PhenyoNkhumane/actions/workflows/dotNET.yml)
 
 RaceDay is an ASP.NET Core API for managing sporting events, categories, participant registrations, clubs, and results.
