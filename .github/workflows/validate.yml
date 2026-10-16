@@ -18,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check required folders and files
+      - name: Validate repository contents
         run: |
           test -d docs
           test -f docs/ERD.png
@@ -33,3 +33,10 @@ jobs:
           test -d RaceDay.Api/Dtos
           test -d RaceDay.Api/Services
           test -d RaceDay.Api/Data
+          test "$(grep -c '^    CLUB {' docs/ERD.md)" -eq 1
+          ! grep -Eq 'HASH_|Phenyo|Nkhumane|9001015009089' docs/RaceDay.sql RaceDay.Api/RaceDay.Api.http
+          grep -q 'workflows/dotNET.yml' README.md
+          if git ls-files | grep -Eq '(^|/)\.vs/'; then
+            echo "Tracked Visual Studio workspace data must not be committed."
+            exit 1
+          fi

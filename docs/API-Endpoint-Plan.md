@@ -3,16 +3,15 @@
 **Project:** Race/Event Management System
 **Part:** 1 — Endpoint Planning (based on ERD: User, Participant, Organiser, Club, Event, Category, Discipline, Registration, Result, ClubMembership)
 
-Each account has exactly one subtype: Participant or Organiser. Public self-registration creates Participant accounts only. Organiser accounts are created by an authorised administrator, who issues a temporary password; the organiser must change it at first login. Only the two account roles in this plan call protected endpoints.
+Each account has exactly one subtype: Participant or Organiser. Public self-registration accepts either role, creates the matching subtype in the same transaction, and returns a JWT. Only those two account roles call protected endpoints.
 
 ## 1. Authentication
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| POST | `/api/auth/register` | Register a Participant account; role is fixed to Participant and cannot be supplied or changed by the caller | Public | `{ email, password, first_name, last_name, id_number_or_passport, asa_permanent_license_number? }` | `201 Created` — `{ user: {...}, token }` |
-| POST | `/api/admin/organisers` | Provision an Organiser account; generate or set a one-time temporary password and require password change at first login | Authorised administrator | `{ email, first_name, last_name, id_number_or_passport }` | `201 Created` — organiser invitation or temporary credential delivered through the approved secure channel |
+| POST | `/api/auth/register` | Register a Participant or Organiser account and create the matching subtype | Public | `{ email, password, first_name, last_name, id_number_or_passport, role, asa_permanent_license_number? }` | `201 Created` — `{ user: {...}, token }` |
 | POST | `/api/auth/login` | Authenticate an existing user and issue a JWT | Public | `{ email, password }` | `200 OK` — `{ user: {...}, token }` |
-| PUT | `/api/auth/password` | Set a new password, including the required first-login change for a provisioned Organiser | Authenticated user | `{ current_password, new_password }` | `204 No Content` |
+| PUT | `/api/auth/password` | Set a new password; temporary-password accounts can access no other protected operation before changing it | Authenticated user | `{ current_password, new_password }` | `204 No Content` |
 
 ## 2. User Profile
 
@@ -25,8 +24,8 @@ Each account has exactly one subtype: Participant or Organiser. Public self-regi
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| GET | `/api/events` | List all events, with optional filters such as status, city or date | Public | — | `200 OK` — array of events |
-| GET | `/api/events/{eventId}` | Get details of a single event | Public | — | `200 OK` — event object |
+| GET | `/api/events` | List published events only | Public | — | `200 OK` — array of event response DTOs |
+| GET | `/api/events/{eventId}` | Get a published event; drafts and cancelled events are hidden | Public | — | `200 OK` — event response DTO |
 | POST | `/api/events` | Create a new event | Organiser | `{ title, description, date, venue_name, city, province, distance_km, event_type, status }` | `201 Created` — event object; `400 Bad Request` for invalid type or distance |
 | PUT | `/api/events/{eventId}` | Update an existing event | Organiser (owner) | `{ title?, description?, date?, venue_name?, city?, province?, distance_km?, event_type?, status? }` | `200 OK` — updated event object; `404 Not Found` if absent |
 | DELETE | `/api/events/{eventId}` | Delete an event | Organiser (owner) | — | `204 No Content` |
@@ -45,7 +44,7 @@ Each account has exactly one subtype: Participant or Organiser. Public self-regi
 
 | HTTP Method | Route | Description | Role Required | Request Body | Expected Response |
 |---|---|---|---|---|---|
-| POST | `/api/events/{eventId}/registrations` | Enter (enrol in) an event by selecting a category | Participant | `{ category_id, requires_temp_asa_license?, medical_aid_name?, medical_aid_number? }` | `201 Created` — registration object; `409 Conflict` for duplicate entry or full category; `404 Not Found` if event/category absent |
+| POST | `/api/events/{eventId}/registrations` | Enter a future published event by selecting an eligible category | Participant | `{ category_id, requires_temp_asa_license?, medical_aid_name?, medical_aid_number? }` | `201 Created` — registration response DTO; `409 Conflict` for duplicate entry or full category; `404 Not Found` if event/category absent |
 | GET | `/api/registrations/me` | View the logged-in Participant's own enrolments | Participant | — | `200 OK` — array of registrations |
 | GET | `/api/events/{eventId}/registrations` | View all enrolments for an organiser's event | Organiser (owner) | — | `200 OK` — array of registrations |
 | GET | `/api/registrations/{registrationId}` | View a single registration's detail | Participant (owner) / Organiser (owner event) | — | `200 OK` — registration object |
@@ -58,7 +57,7 @@ Each account has exactly one subtype: Participant or Organiser. Public self-regi
 |---|---|---|---|---|---|
 | POST | `/api/events/{eventId}/results` | Record the official race result for a participant's registration, including times, positions and race status | Organiser (owner) | `{ registration_id, gun_time, net_time, overall_position, category_position, status }` | `201 Created` — result object |
 | PUT | `/api/results/{resultId}` | Correct/update a captured result | Organiser (owner) | `{ gun_time?, net_time?, overall_position?, category_position?, status? }` | `200 OK` — updated result object |
-| GET | `/api/events/{eventId}/results` | View all results for an event | Public | — | `200 OK` — array of results |
+| GET | `/api/events/{eventId}/results` | View safe race-result fields only; omit participant identifiers and registration/medical-aid details | Public | — | `200 OK` — array of result response DTOs |
 | GET | `/api/results/me` | View the logged-in Participant's own results | Participant | — | `200 OK` — array of results |
 | GET | `/api/results/{resultId}` | View a single result | Participant (owner) / Organiser (owner event) | — | `200 OK` — result object |
 
@@ -73,9 +72,9 @@ These endpoints support the `Discipline`, `Club`, and `ClubMembership` entities 
 | GET | `/api/clubs` | List all registered clubs | Public | — | `200 OK` — array of clubs |
 | POST | `/api/clubs` | Register a new club | Organiser | `{ name, registration_number, contact_email, contact_number }` | `201 Created` — club object; `409 Conflict` if name or registration number already exists |
 | GET | `/api/clubs/{clubId}` | Get details of a specific club | Public | — | `200 OK` — club object |
-| POST | `/api/clubs/{clubId}/memberships` | Join a club under a specific sporting discipline | Participant | `{ discipline_id, membership_number, joined_at }` | `201 Created` — membership object; `409 Conflict` if already a member for that discipline; `404 Not Found` if club absent |
+| POST | `/api/clubs/{clubId}/memberships` | Join a club under a specific sporting discipline | Participant | `{ discipline_id, membership_number, joined_at }` | `201 Created` — membership response DTO; `409 Conflict` if already a member for that discipline; `404 Not Found` if club absent |
 | GET | `/api/users/me/memberships` | View the logged-in Participant's club memberships | Participant | — | `200 OK` — array of memberships |
 
 ## Notes on error responses
 
-All endpoints additionally return, where applicable: `400 Bad Request` (validation failure), `401 Unauthorized` (missing/invalid token), `403 Forbidden` (wrong role or not the resource owner), and `404 Not Found` (resource does not exist). `409 Conflict` is used for uniqueness or capacity conflicts, including duplicate registrations and full categories. Because registrations are retained and uniquely constrained after cancellation, a participant cannot re-enrol in the same category after cancelling; a new category/entry or an explicit policy change is needed.
+All endpoints additionally return, where applicable: `400 Bad Request` (validation failure), `401 Unauthorized` (missing/invalid bearer token), `403 Forbidden` (wrong role or not the resource owner), `404 Not Found` (resource does not exist), and `409 Conflict` (uniqueness or capacity conflict). A cancelled registration may be entered again; the participant/category uniqueness rule applies only while a registration is active.
